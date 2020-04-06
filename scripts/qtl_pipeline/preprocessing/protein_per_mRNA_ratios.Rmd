@@ -1,0 +1,1275 @@
+---
+title: "QTL on protein-per-mRNA ratios"
+author: "Ines Assum"
+date: \today
+graphics: yes
+header-includes:
+  \usepackage{graphicx, fancyhdr, multicol, xcolor}
+  \usepackage{sectsty, titling, lmodern}
+  \usepackage[T1]{fontenc}
+  \renewcommand*\familydefault{\sfdefault}
+  \definecolor{myblue}{RGB}{31, 120, 180}
+  \allsectionsfont{\color{myblue}}
+  \sectionfont{\color{myblue}\sectionrule{3ex}{0pt}{-1ex}{1pt}}
+  \pretitle{\begin{center}\LARGE\bfseries\color{myblue}}
+  \posttitle{\par\end{center}\vskip 0.5em}
+  \pagestyle{fancy}
+  \lhead{Ines Assum}
+  \rhead{\today}
+  \chead{QTL on protein-per-mRNA ratios}
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = paste0("../reports/", substr(basename(inputFile), 1, nchar(inputFile) - 4), Sys.Date(), '.pdf')) })
+output: 
+  pdf_document:
+    toc: FALSE
+    number_sections: TRUE
+---
+
+```{r setup, include=FALSE}
+options(width = 80)
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+knitr::opts_chunk$set(fig.width = 10)
+```
+
+<!-- opts_chunk$set(tidy.opts=list(width.cutoff=80),tidy=TRUE) -->
+
+# Protein-per-mRNA ratios
+
+```{r, cache=F}
+source("helper/helper.R")
+source("preprocessing/correction/normalization/norm.R")
+local=T
+get.duplicates <- function(df, cols){
+  df2 <- data.frame(table(df[, cols]))
+  df2 <- df2[df2$Freq>1, ]
+  colnames(df2) <- c(cols, "Freq")
+  df <- merge(df,
+              df2[cols],
+              all.y=T)
+}
+
+library(ggplot2)
+library(ggpubr)
+library(RColorBrewer)
+
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+HMGU.blue <- "#003E6E"
+mygray <- "#C6DDEA"
+col.paired <- brewer.pal(n = 11, "Paired")
+col.set <- col.paired[c(2,8,9)]
+```
+
+## Preprocessing
+
+We want to compare protein-to-mRNA ratios. First step is an appropriate normalization. 
+```{r}
+# setwd("/home/icb/ines.assum/projects/symAtrial_QTL/scripts")
+# setwd("/Users/ines/work/symAtrial_QTL/scripts")
+expression_p <- readRDS(paste0(get.path("dataset", local),
+                               "AFHRI_B_proteomics_QC_symbol.RDS"))
+colnames(expression_p) <- sub(".RAA","", colnames(expression_p))
+
+expression_t <- readRDS(paste0(get.path("dataset", local),
+                               "AFHRI_B_transcriptomics_QC_symbol.RDS"))
+colnames(expression_t) <- sub(".RAA", "", colnames(expression_t))
+
+match_s <- intersect(colnames(expression_t), colnames(expression_p))
+match_g <- intersect(rownames(expression_t), rownames(expression_p))
+expression_t <- expression_t[match_g, match_s]
+expression_p <- expression_p[match_g, match_s]
+
+expr_t <- correct.linewise(expression_t)
+expr_p <- correct.linewise(expression_p)
+```
+
+In our dataset, we have `r dim(expression_t)[1]` genes and `r dim(expression_t)[2]` samples
+First, we have a short look at the per-sample-quantile normalized and per sample-and-gene-quantile normalized data:
+
+Transcriptomics:
+```{r}
+ggarrange(ggplot(stack(as.data.frame(expression_t[, 1:25]))) +
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="samples"),
+          ggplot(stack(as.data.frame(t(expression_t[1:25,])))) + 
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="genes"),
+          ggplot(stack(as.data.frame(expr_t[, 1:25]))) +
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="samples"),
+          ggplot(stack(as.data.frame(t(expr_t[1:25,])))) + 
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="genes"),
+          nrow = 2, ncol = 2)
+```
+
+Proteomics:
+
+```{r}
+ggarrange(ggplot(stack(as.data.frame(expression_p[, 1:25]))) +
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="samples"),
+          ggplot(stack(as.data.frame(t(expression_p[1:25,])))) + 
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="genes"),
+          ggplot(stack(as.data.frame(expr_p[, 1:25]))) +
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="samples"),
+          ggplot(stack(as.data.frame(t(expr_p[1:25,])))) + 
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="genes"),
+          nrow = 2, ncol = 2)
+```
+
+Median (over samples) expression per gene:
+
+```{r}
+# lmres <- summary(lm(as.numeric(expr_p) ~ as.numeric(expr_t)))
+# lmres
+# lmres <- summary(lm(as.numeric(as.matrix(expression_p)) ~ as.numeric(as.matrix(expression_t))))
+# lmres
+# lmres <- summary(lm(as.numeric(as.matrix(residuals_prot)) ~ as.numeric(as.matrix(residuals_trans))))
+# lmres
+
+if(!file.exists(paste0(get.path("dataset", local),
+                       "prot_trans_correlations.RDS"))){
+  median.trans <- apply(expression_t, 1, median)
+  median.prot <- apply(expression_p, 1, function(x) median(x, na.rm=T))
+  
+  residuals_trans <- readRDS(paste0(get.path("dataset", local),
+                                    "residuals_trans_peer.RDS"))
+  residuals_prot <- readRDS(paste0(get.path("dataset", local),
+                                   "residuals_prot_peer.RDS"))
+  
+  identical(rownames(expression_t), rownames(residuals_trans))
+  
+  df.g <- data.frame(type="gene",
+                     id=rownames(expression_t),
+                     median.prot=median.prot,
+                     median.trans=median.trans,
+                     cor.raw=diag(cor(t(expression_p), t(expression_t),
+                                      use = "pairwise.complete.obs")),
+                     cor.peer=diag(cor(t(residuals_prot), t(residuals_trans),
+                                       use = "pairwise.complete.obs")),
+                     row.names = rownames(expression_t),
+                     stringsAsFactors = F)
+  df.g$cor.test.raw <- NA
+  df.g$cor.test.peer <- NA
+  df.g$R.squared.raw <- NA
+  df.g$R.squared.peer <- NA
+  df.g$sigma2.trans.raw <- NA
+  df.g$sigma2.trans.peer <- NA
+  df.g$sigma2.prot.raw <- NA
+  df.g$sigma2.prot.peer <- NA
+  df.g$highly.variable <- 0
+  df.g$cor.raw.hv <- NA
+  df.g$cor.peer.hv <- NA
+  df.g$R.squared.raw.hv <- NA
+  df.g$R.squared.peer.hv <- NA
+  for(i in rownames(expression_t)){
+    #i=rownames(expression_t)[1]
+    df.g[i, "cor.test.raw"] <- cor.test(t(expression_p)[, i],
+                                     t(expression_t)[, i],
+                                     use = "pairwise.complete.obs")[["p.value"]]
+  
+    df.g[i, "cor.test.peer"] <- cor.test(t(residuals_prot)[, i],
+                                      t(residuals_trans)[, i],
+                                      use = "pairwise.complete.obs")[["p.value"]]
+    
+    df.g[i, "R.squared.raw"] <- summary(lm(t(expression_p)[, i] ~ t(expression_t)[, i]))$r.squared
+    
+    df.g[i, "R.squared.peer"] <- summary(lm(t(residuals_prot)[, i] ~ t(residuals_trans)[, i]))$r.squared
+    
+    df.g[i, "sigma2.trans.raw"] <- var(t(expression_t)[, i],
+                                       use = "pairwise.complete.obs")
+    df.g[i, "sigma2.trans.peer"] <- var(t(residuals_trans)[, i],
+                                        use = "pairwise.complete.obs")
+    df.g[i, "sigma2.prot.raw"] <- var(t(expression_p)[, i],
+                                      use = "pairwise.complete.obs")
+    df.g[i, "sigma2.prot.peer"] <- var(t(residuals_prot)[, i],
+                                       use = "pairwise.complete.obs")
+  }
+  lmres <- summary(lm(log(df.g$sigma2.trans.raw) ~ df.g$median.trans))
+
+  plot(df.g$median.trans, log(df.g$sigma2.trans.raw), pch=16,
+       main = "Variance compared to mean expression",
+       xlab = "median transcript expression",
+       ylab = "log(transcript variance)")
+  abline(a=lmres$coefficients[1,1], b=lmres$coefficients[2,1], lwd = 2)
+  abline(a=lmres$coefficients[1,1] + 3*lmres$coefficients[1,2],
+         b=lmres$coefficients[2,1],
+         col="red", lwd = 2, lty = 2)
+  abline(a=lmres$coefficients[1,1] - 3*lmres$coefficients[1,2],
+         b=lmres$coefficients[2,1],
+         col="red", lwd = 2, lty = 2)
+  
+  df.g$highly.variable[df.g$sigma2.trans.raw > exp(lmres$coefficients[1,1] + 3*lmres$coefficients[1,2] + lmres$coefficients[2,1]*df.g$median.trans)] <- 1
+  #table(df.g$highly.variable)
+
+  
+  df.s <- data.frame(type="sample",
+                     id=colnames(expression_t),
+                     median.prot=NA,
+                     median.trans=NA,
+                     cor.raw=diag(cor(expression_p, expression_t,
+                                      use = "pairwise.complete.obs")),
+                     cor.peer=NA,
+                     row.names=colnames(expression_t),
+                     stringsAsFactors = F)
+  df.s[colnames(residuals_trans), "cor.peer"] <- diag(cor(residuals_prot,
+                                                          residuals_trans,
+                                                          use = "pairwise.complete.obs"))
+  df.s$cor.test.raw <- NA
+  df.s$cor.test.peer <- NA
+  df.s$R.squared.raw <- NA
+  df.s$R.squared.peer <- NA
+  df.s$sigma2.trans.raw <- NA
+  df.s$sigma2.trans.peer <- NA
+  df.s$sigma2.prot.raw <- NA
+  df.s$sigma2.prot.peer <- NA
+  df.s$highly.variable <- NA
+  df.s$cor.raw.hv <- NA
+  df.s$cor.peer.hv <- NA
+  df.s$R.squared.raw.hv <- NA
+  df.s$R.squared.peer.hv <- NA
+  for(i in colnames(expression_t)){
+    #i=colnames(expression_t)[1]
+    df.s[i, "cor.test.raw"] <- cor.test(expression_p[, i],
+                                     expression_t[, i],
+                                     use = "pairwise.complete.obs")[["p.value"]]
+    df.s[i, "R.squared.raw"] <- summary(lm(expression_p[, i] ~ expression_t[, i]))$r.squared
+
+    try(df.s[i, "cor.test.peer"] <- cor.test(residuals_prot[, i],
+                                         residuals_trans[, i],
+                                         use = "pairwise.complete.obs")[["p.value"]])
+    try(df.s[i, "R.squared.peer"] <- summary(lm(residuals_prot[, i] ~ residuals_trans[, i]))$r.squared)
+    
+    df.s[i, "cor.raw.hv"] <- cor(expression_p[df.g[df.g$highly.variable==1, "id"],i],
+                                        expression_t[df.g[df.g$highly.variable==1, "id"], i],
+                                        use = "pairwise.complete.obs")
+    df.s[i, "R.squared.raw.hv"] <- summary(lm(expression_p[df.g[df.g$highly.variable==1, "id"],
+                                                           i] ~ expression_t[df.g[df.g$highly.variable==1, "id"],
+                                                                             i]))$r.squared
+
+    try(df.s[i, "cor.peer.hv"] <- cor(residuals_prot[df.g[df.g$highly.variable==1, "id"], i],
+                                             residuals_trans[df.g[df.g$highly.variable==1, "id"], i],
+                                             use = "pairwise.complete.obs"))
+    try(df.s[i, "R.squared.peer.hv"] <- summary(lm(residuals_prot[df.g[df.g$highly.variable==1, "id"],
+                                                                  i] ~ residuals_trans[df.g[df.g$highly.variable==1,"id"],
+                                                                                       i]))$r.squared)
+
+  }
+  
+  df <- rbind(df.g, df.s)
+  e.genes <- readRDS(paste0(get.path("results", local),
+                            "/imputed/cis/QTL_res_genes_per_group.RDS"))
+  df$eQTL <- df$id %in% e.genes$eQTL
+  
+  gtex.e.genes <- read.table(paste0(get.path("gtex", local),
+                                    "Heart_Atrial_Appendage.allpairs.significant.txt"),
+                             sep = "\t", h=T, stringsAsFactors = F)
+  hist(-log(gtex.e.genes$pval_nominal), breaks = 100)
+  max(gtex.e.genes$pval_nominal)
+  gtex.e.genes <- data.frame(gene_id=unique(gtex.e.genes$gene_id),
+                             stringsAsFactors = F)
+  ensembl.ids <- readRDS(paste0(get.path("locations", local),
+                                "ensembl_ids_AFHRIB_QTLgenes.RDS"))
+  rownames(ensembl.ids) <- ensembl.ids$ensembl_gene_id
+  gtex.e.genes$ensembl_gene_id <- gsub("\\..*", "", gtex.e.genes$gene_id)
+  gtex.e.genes$symbol <- ensembl.ids[gtex.e.genes$ensembl_gene_id, "external_gene_name"]
+  df$gtex.eQTL <- df$id %in% gtex.e.genes$symbol
+  
+  saveRDS(df, paste0(get.path("dataset", local),
+                     "prot_trans_correlations.RDS"))
+} else {
+  df <- readRDS(paste0(get.path("dataset", local),
+                       "prot_trans_correlations.RDS"))
+}
+
+lmres <- lm(data = df[df$type=="gene", ], median.prot ~ median.trans)
+summary(lmres)$r.squared
+
+lmres <- lm(data = df[df$type=="gene" &
+          df$highly.variable==1, ], median.prot ~ median.trans)
+summary(lmres)$r.squared
+median(df[df$type=="gene" &
+          df$highly.variable==1, ]$cor.raw)
+median(df[df$type=="gene", ]$cor.raw)
+median(df[df$type=="sample", ]$cor.raw.hv, na.rm = T)
+
+df$cv2.trans.raw <- df$sigma2.trans.raw/(df$median.trans^2)
+plot(log(df[df$type=="gene", ]$cv2.trans.raw), df[df$type=="gene", ]$cor.raw, pch=16)
+
+par(mfrow=c(2,1))
+hist(df[df$type=="gene", ]$median.trans, breaks=100)
+hist(df[df$type=="gene", ]$sigma2.trans.raw, breaks=100)
+par(mfrow=c(1,1))
+
+
+
+
+par(mfrow=c(2,2))
+hist(df[df$type=="gene", ]$sigma2.trans.raw, xlim=c(-1,1), breaks=100)
+hist(df[df$type=="gene" &
+          df$sigma2.trans.raw>0.1, ]$cor.raw, xlim=c(-1,1), breaks=100)
+hist(df[df$type=="gene" & df$eQTL==1, ]$sigma2.trans.raw, xlim=c(-1,1), breaks=100)
+hist(df[df$type=="gene" &
+          df$sigma2.trans.raw>0.1 &
+          df$eQTL==1, ]$cor.raw, xlim=c(-1,1), breaks=100)
+par(mfrow=c(1,1))
+
+
+lmres2 <- lm(as.vector(as.matrix(expression_p[df[df$type=="gene" &
+          df$highly.variable==1, "id"], ])) ~ as.vector(as.matrix(expression_t[df[df$type=="gene" &
+          df$highly.variable==1, "id"], ])))
+summary(lmres2)$r.squared
+
+# par(mfrow=c(2,2))
+# hist(df[df$type=="gene", ]$sigma2.trans.raw, breaks=100, xlim =c(0,3.5))
+# hist(df[df$type=="gene", ]$sigma2.trans.peer, breaks=100, xlim =c(0,3.5))
+# hist(df[df$type=="gene", ]$sigma2.prot.raw, breaks=100, xlim =c(0,3.5))
+# hist(df[df$type=="gene", ]$sigma2.prot.peer, breaks=100, xlim =c(0,3.5))
+# par(mfrow=c(1,1))
+
+# median(df[df$type=="sample", "R.squared.raw"], na.rm = T)
+# median(df[df$type=="sample", "R.squared.peer"], na.rm = T)
+# median(df[df$type=="sample", "R.squared.raw.hv"], na.rm = T)
+# median(df[df$type=="sample", "R.squared.peer.hv"], na.rm = T)
+```
+
+```{r}
+ggplot(df[df$type=="gene", ],
+       aes(x=median.trans, y=median.prot, col=cor.raw)) +
+  geom_abline(slope = 1, intercept = 0, col="black") +
+  geom_point() +
+  theme_bw() +
+  labs(title="median-per-gene expression for 1324 genes",
+     x="median transcript expression",
+     y="median protein expression")
+print(paste0("Median correlation: ", median(df[df$type=="gene", "cor.raw"])))
+```
+
+```{r}
+ggarrange(
+ggplot(df[df$type=="gene", ], aes(x=cor.raw)) +
+  geom_histogram(bins = 100, col=col.set[1], fill=col.set[1], alpha = 0.2) +
+  geom_vline(xintercept = median(df[df$type=="gene", ]$cor.raw),
+             col=col.set[1]) +
+  xlim(c(-1, 1)) +
+  ggtitle("per-gene protein and mRNA correlation across samples") +
+  theme_bw(),
+ggplot(df[df$type=="sample", ], aes(x=cor.raw)) +
+  geom_histogram(bins = 100, col=col.set[1], fill=col.set[1], alpha = 0.2) +
+  geom_vline(xintercept = median(df[df$type=="sample", ]$cor.raw),
+             col=col.set[1]) +
+  xlim(c(-1, 1)) +
+  ggtitle("per-sample protein and mRNA correlation across genes") +
+  theme_bw(),
+ncol = 2)
+```
+
+```{r}
+ggarrange(
+  ggplot(df[df$type=="gene", ], aes(x=cor.raw, col=eQTL, fill=eQTL)) +
+  geom_histogram(bins = 100, alpha = 0.2) +
+  #stat_ecdf(geom = "point") +
+  geom_vline(xintercept = median(df[df$type=="gene", ]$cor.raw), col=col.set[1]) +
+  xlim(c(-1, 1)) +
+  scale_color_manual(element_blank(),
+                     values = col.set[1:2],
+                     labels = c("non eQTL", "eQTL"))  +
+  scale_fill_manual(element_blank(),
+                    values = col.set[1:2],
+                    labels = c("non eQTL", "eQTL"))  +
+  theme_bw(),
+ggplot(df[df$type=="gene", ], aes(x=cor.raw, col=eQTL, fill=eQTL)) +
+  #geom_histogram(bins = 100, alpha = 0.2) +
+  stat_ecdf(geom = "point") +
+  geom_vline(xintercept = median(df[df$type=="gene", ]$cor.raw), col=col.set[1]) +
+  xlim(c(-1, 1)) +
+  scale_color_manual(element_blank(),
+                     values = col.set[1:2],
+                     labels = c("non eQTL", "eQTL"))  +
+  scale_fill_manual(element_blank(),
+                    values = col.set[1:2],
+                    labels = c("non eQTL", "eQTL"))  +
+  theme_bw(),
+  ggplot(df[df$type=="gene", ], aes(x=cor.peer, col=eQTL, fill=eQTL)) +
+  geom_histogram(bins = 100, alpha = 0.2) +
+  #stat_ecdf(geom = "point") +
+  geom_vline(xintercept = median(df[df$type=="gene", ]$cor.peer), col=col.set[1]) +
+  xlim(c(-1, 1)) +
+  scale_color_manual(element_blank(),
+                     values = col.set[1:2],
+                     labels = c("non eQTL", "eQTL"))  +
+  scale_fill_manual(element_blank(),
+                    values = col.set[1:2],
+                    labels = c("non eQTL", "eQTL"))  +
+  theme_bw(),
+ggplot(df[df$type=="gene", ], aes(x=cor.peer, col=eQTL, fill=eQTL)) +
+  #geom_histogram(bins = 100, alpha = 0.2) +
+  stat_ecdf(geom = "point") +
+  geom_vline(xintercept = median(df[df$type=="gene", ]$cor.peer), col=col.set[1]) +
+  xlim(c(-1, 1)) +
+  scale_color_manual(element_blank(),
+                     values = col.set[1:2],
+                     labels = c("non eQTL", "eQTL"))  +
+  scale_fill_manual(element_blank(),
+                    values = col.set[1:2],
+                    labels = c("non eQTL", "eQTL"))  +
+  theme_bw(),
+ncol = 2, nrow = 2, widths = c(1,1),
+common.legend = T, legend = "bottom")
+```
+
+```{r}
+ggarrange(
+  ggplot(df[df$type=="gene", ], aes(x=cor.raw, col=gtex.eQTL, fill=gtex.eQTL)) +
+  geom_histogram(bins = 100, alpha = 0.2) +
+  #stat_ecdf(geom = "point") +
+  geom_vline(xintercept = median(df[df$type=="gene", ]$cor.raw), col=col.set[1]) +
+  xlim(c(-1, 1)) +
+  scale_color_manual(element_blank(),
+                     values = col.set[1:2],
+                     labels = c("non gtex.eQTL", "gtex.eQTL"))  +
+  scale_fill_manual(element_blank(),
+                    values = col.set[1:2],
+                    labels = c("non gtex.eQTL", "gtex.eQTL"))  +
+  theme_bw(),
+ggplot(df[df$type=="gene", ], aes(x=cor.raw, col=gtex.eQTL, fill=gtex.eQTL)) +
+  #geom_histogram(bins = 100, alpha = 0.2) +
+  stat_ecdf(geom = "point") +
+  geom_vline(xintercept = median(df[df$type=="gene", ]$cor.raw), col=col.set[1]) +
+  xlim(c(-1, 1)) +
+  scale_color_manual(element_blank(),
+                     values = col.set[1:2],
+                     labels = c("non gtex.eQTL", "gtex.eQTL"))  +
+  scale_fill_manual(element_blank(),
+                    values = col.set[1:2],
+                    labels = c("non gtex.eQTL", "gtex.eQTL"))  +
+  theme_bw(),
+  ggplot(df[df$type=="gene", ], aes(x=cor.peer, col=gtex.eQTL, fill=gtex.eQTL)) +
+  geom_histogram(bins = 100, alpha = 0.2) +
+  #stat_ecdf(geom = "point") +
+  geom_vline(xintercept = median(df[df$type=="gene", ]$cor.peer), col=col.set[1]) +
+  xlim(c(-1, 1)) +
+  scale_color_manual(element_blank(),
+                     values = col.set[1:2],
+                     labels = c("non gtex.eQTL", "gtex.eQTL"))  +
+  scale_fill_manual(element_blank(),
+                    values = col.set[1:2],
+                    labels = c("non gtex.eQTL", "gtex.eQTL"))  +
+  theme_bw(),
+ggplot(df[df$type=="gene", ], aes(x=cor.peer, col=gtex.eQTL, fill=gtex.eQTL)) +
+  #geom_histogram(bins = 100, alpha = 0.2) +
+  stat_ecdf(geom = "point") +
+  geom_vline(xintercept = median(df[df$type=="gene", ]$cor.peer), col=col.set[1]) +
+  xlim(c(-1, 1)) +
+  scale_color_manual(element_blank(),
+                     values = col.set[1:2],
+                     labels = c("non gtex.eQTL", "gtex.eQTL"))  +
+  scale_fill_manual(element_blank(),
+                    values = col.set[1:2],
+                    labels = c("non gtex.eQTL", "gtex.eQTL"))  +
+  theme_bw(),
+ncol = 2, nrow = 2, widths = c(1,1),
+common.legend = T, legend = "bottom")
+```
+
+
+```{r}
+ggarrange(
+  ggplot(df[df$type=="gene", ], aes(x=log(cor.test.raw))) +
+    geom_histogram(bins = 100, col=col.set[1], fill=col.set[1], alpha = 0.2) +
+    #geom_vline(xintercept = median(df$correlation), col=col.set[1]) +
+    xlim(c(-60, 0)) +
+    theme_bw(),
+  ggplot(df[df$type=="gene", ], aes(x=log(cor.test.peer))) +
+    geom_histogram(bins = 100, col=col.set[1], fill=col.set[1], alpha = 0.2) +
+    #geom_vline(xintercept = median(df$correlation), col=col.set[1]) +
+    xlim(c(-60, 0)) +
+    theme_bw(),
+  nrow = 1, ncol = 2
+)
+```
+
+
+overall correlation: `r cor(as.vector(t(expression_p)), as.vector(t(expression_t)), use = "pairwise.complete.obs")`
+
+```{r, fig.width=6, fig.height=8}
+library(fdrtool)
+fdr <- fdrtool(df[df$type=="gene", ]$cor.raw, statistic="correlation",
+               plot=TRUE, color.figure=TRUE, verbose=F,
+               cutoff.method=c("fndr", "pct0", "locfdr"),
+               pct0=0.75)
+print(fdr$param)
+
+# fdr2 <- fdrtool(df$cor.test, statistic="pvalue",
+#                plot=TRUE, color.figure=TRUE, verbose=TRUE,
+#                cutoff.method=c("fndr", "pct0", "locfdr"),
+#                pct0=0.75)
+# fdr2$param
+```
+
+Per sample correlations:
+```{r}
+ggarrange(
+  ggplot(df[df$type=="sample", ], aes(x=cor.raw)) +
+    geom_histogram(bins = 100, col=col.set[1], fill=col.set[1], alpha = 0.2) +
+    geom_vline(xintercept = median(df[df$type=="sample", "cor.raw"]),
+               col=col.set[1]) +
+    xlim(c(-1,1)) +
+    theme_bw(),
+  ggplot(df[df$type=="sample", ], aes(x=cor.peer)) +
+    geom_histogram(bins = 100, col=col.set[1], fill=col.set[1], alpha = 0.2) +
+    geom_vline(xintercept = median(df[df$type=="sample", "cor.peer"], na.rm = T),
+               col=col.set[1]) +
+    xlim(c(-1,1)) +
+    theme_bw(),
+  nrow = 1, ncol = 2
+)
+```
+
+### Hapmap LCL data
+
+```{r}
+if(!file.exists(paste0(get.path("data", local),
+                       "hapmap_LCL/LCL_prot_trans_correlations.RDS"))){
+  load(paste0(get.path("data", local),
+              "hapmap_LCL/eQTL1_pQTL1_cor1_HM.RData"))
+  identical(rownames(eQTL1_HM), rownames(pQTL1_HM))
+  identical(colnames(eQTL1_HM), colnames(pQTL1_HM))
+  eQTL1_HM[1:10, 1:9]
+  pQTL1_HM[1:10, 1:9]
+  ggplot(stack(eQTL1_HM[, 1:20])) +
+    geom_violin(aes(x = ind, y = values)) +
+    geom_boxplot(aes(x = ind, y = values), width = 0.1) +
+    ggtitle("Hapmap LCL RNAseq (first 20 transcripts)") +
+    theme_bw()
+  ggplot(stack(pQTL1_HM[, 1:20])) +
+    geom_violin(aes(x = ind, y = values)) +
+    geom_boxplot(aes(x = ind, y = values), width = 0.1) +
+    ggtitle("Hapmap LCL proteomics (first 20 proteins)") +
+    theme_bw()
+  
+  median.trans <- apply(eQTL1_HM, 2, function(x) median(x, na.rm=T))
+  median.prot <- apply(pQTL1_HM, 2, function(x) median(x, na.rm=T))
+  
+  df.LCL.g <- data.frame(type="gene",
+                         id=colnames(eQTL1_HM),
+                         median.prot=median.prot,
+                         median.trans=median.trans,
+                         cor.raw=diag(cor(eQTL1_HM, pQTL1_HM,
+                                          use = "pairwise.complete.obs")),
+                         row.names = colnames(eQTL1_HM),
+                         stringsAsFactors = F)
+  
+  df.LCL.g$cor.test <- NA
+  df.LCL.g$R.squared <- NA
+  for(i in colnames(eQTL1_HM)){
+    df.LCL.g[i, "cor.test"] <- cor.test(eQTL1_HM[, i],
+                                        pQTL1_HM[, i],
+                                        use = "pairwise.complete.obs")[["p.value"]]
+    df.LCL.g[i, "R.squared"] <- summary(lm(pQTL1_HM[, i] ~ eQTL1_HM[, i]))$r.squared
+  }
+  
+  df.LCL.s <- data.frame(type="sample",
+                         id=rownames(eQTL1_HM),
+                         median.prot=NA,
+                         median.trans=NA,
+                         cor.raw=diag(cor(t(eQTL1_HM), t(pQTL1_HM),
+                                          use = "pairwise.complete.obs")),
+                         row.names=rownames(eQTL1_HM),
+                         stringsAsFactors = F)
+
+  df.LCL.s$cor.test <- NA
+  df.LCL.s$R.squared <- NA
+  for(i in rownames(eQTL1_HM)){
+    df.LCL.s[i, "cor.test"] <- cor.test(t(eQTL1_HM)[, i],
+                                     t(pQTL1_HM)[, i],
+                                     use = "pairwise.complete.obs")[["p.value"]]
+    df.LCL.s[i, "R.squared"] <- summary(lm(t(pQTL1_HM)[, i] ~ t(eQTL1_HM)[, i]))$r.squared
+  }
+  
+  df.LCL <- rbind(df.LCL.g, df.LCL.s)
+  e.genes <- read.table(paste0(get.path("data", local),
+                               "/hapmap_LCL/EUR373.gene.cis.FDR5.all.rs137.txt"),
+                        stringsAsFactors = F, h=T)
+  e.genes$gene_id <- gsub("\\..*", "", e.genes$GENE_ID)
+  hist(-log(e.genes$pvalue), breaks = 100)
+  table(e.genes$pvalue<1e-5)
+  max(e.genes$pvalue)
+  df.LCL$eQTL <- df.LCL$id %in% e.genes$gene_id
+  table(df.LCL$eQTL)
+  
+  df.LCL$symbol <- NA
+  ensembl.ids <- readRDS(paste0(get.path("locations", local),
+                                "ensembl_ids_AFHRIB_QTLgenes.RDS"))
+  head(ensembl.ids)
+  rownames(ensembl.ids) <- ensembl.ids$ensembl_gene_id
+  df.LCL$symbol <- ensembl.ids[df.LCL$id, "external_gene_name"]
+  table(df.LCL$type, is.na(df.LCL$symbol))
+
+  saveRDS(df.LCL, paste0(get.path("data", local),
+                     "hapmap_LCL/LCL_prot_trans_correlations.RDS"))
+} else {
+  df.LCL <- readRDS(paste0(get.path("data", local),
+                           "hapmap_LCL/LCL_prot_trans_correlations.RDS"))
+}
+```
+
+For our study, there was matched data for `r length(df$type[df$type=="gene"])`
+genes across `r length(df$type[df$type=="sample"])` individuals, for the hapmap
+LCL data, there were `r length(df.LCL$type[df.LCL$type=="gene"])`
+genes measured across `r length(df.LCL$type[df.LCL$type=="sample"])` individuals.
+
+Median Rsquared in our study was
+`r median(df[df$type=="gene", "R.squared.raw"], na.rm = T)` per gene and
+`r median(df[df$type=="sample", "R.squared.raw"], na.rm = T)` per individual.
+Mean Rsquared was `r mean(df[df$type=="gene", "R.squared.raw"], na.rm = T)` per gene
+and `r mean(df[df$type=="sample", "R.squared.raw"], na.rm = T)` per individual.
+
+
+For the hapmap LCL data, median Rsquared was 
+`r median(df.LCL[df.LCL$type=="gene", "R.squared"], na.rm = T)` per gene and
+`r median(df.LCL[df.LCL$type=="sample", "R.squared"], na.rm = T)` per individual.
+Mean Rsquared was `r mean(df.LCL[df.LCL$type=="gene", "R.squared"], na.rm = T)` per gene
+and `r mean(df.LCL[df.LCL$type=="sample", "R.squared"], na.rm = T)` per individual.
+
+
+per gene:
+
+measure | non eQTL | eQTL | non gtex.eQTL | gtex.eQTL | LCL non eQTL | LCL eQTL
+--------|----------|------|---------------|-----------|--------------|----------
+median Rsquared | `r median(df[df$type=="gene" & df$eQTL==FALSE, "R.squared.raw"], na.rm = T)` | `r median(df[df$eQTL==TRUE, "R.squared.raw"], na.rm = T)` | `r median(df[df$type=="gene" & df$gtex.eQTL==FALSE, "R.squared.raw"], na.rm = T)` | `r median(df[df$gtex.eQTL==TRUE, "R.squared.raw"], na.rm = T)` | `r median(df.LCL[df.LCL$type=="gene" & df.LCL$eQTL==FALSE, "R.squared"], na.rm = T)` | `r median(df.LCL[df.LCL$eQTL==TRUE, "R.squared"], na.rm = T)` 
+mean Rsquared | `r mean(df[df$type=="gene" & df$eQTL==FALSE, "R.squared.raw"], na.rm = T)` | `r mean(df[df$eQTL==TRUE, "R.squared.raw"], na.rm = T)` | `r mean(df[df$type=="gene" & df$gtex.eQTL==FALSE, "R.squared.raw"], na.rm = T)` | `r mean(df[df$gtex.eQTL==TRUE, "R.squared.raw"], na.rm = T)` | `r mean(df.LCL[df.LCL$type=="gene" & df.LCL$eQTL==FALSE, "R.squared"], na.rm = T)` | `r mean(df.LCL[df.LCL$eQTL==TRUE, "R.squared"], na.rm = T)` 
+median cor | `r median(df[df$type=="gene" & df$eQTL==FALSE, "cor.raw"], na.rm = T)` | `r median(df[df$eQTL==TRUE, "cor.raw"], na.rm = T)` | `r median(df[df$type=="gene" & df$gtex.eQTL==FALSE, "cor.raw"], na.rm = T)` | `r median(df[df$gtex.eQTL==TRUE, "cor.raw"], na.rm = T)` | `r median(df.LCL[df.LCL$type=="gene" & df.LCL$eQTL==FALSE, "cor.raw"], na.rm = T)` | `r median(df.LCL[df.LCL$eQTL==TRUE, "cor.raw"], na.rm = T)` 
+mean cor | `r mean(df[df$type=="gene" & df$eQTL==FALSE, "cor.raw"], na.rm = T)` | `r mean(df[df$eQTL==TRUE, "cor.raw"], na.rm = T)` | `r mean(df[df$type=="gene" & df$gtex.eQTL==FALSE, "cor.raw"], na.rm = T)` | `r mean(df[df$gtex.eQTL==TRUE, "cor.raw"], na.rm = T)` | `r mean(df.LCL[df.LCL$type=="gene" & df.LCL$eQTL==FALSE, "cor.raw"], na.rm = T)` | `r mean(df.LCL[df.LCL$eQTL==TRUE, "cor.raw"], na.rm = T)` 
+
+LCL filtered for genes measured in transcriptomics and proteomics in AFHRI-B:
+`r df.LCL2 <- df.LCL[which(df.LCL$type=="gene" & df.LCL$symbol %in% df$id), ]`
+
+measure | non eQTL | eQTL | non gtex.eQTL | gtex.eQTL | LCL non eQTL | LCL eQTL
+--------|----------|------|---------------|-----------|--------------|----------
+median Rsquared | `r median(df[df$type=="gene" & df$eQTL==FALSE, "R.squared.raw"], na.rm = T)` | `r median(df[df$eQTL==TRUE, "R.squared.raw"], na.rm = T)` | `r median(df[df$type=="gene" & df$gtex.eQTL==FALSE, "R.squared.raw"], na.rm = T)` | `r median(df[df$gtex.eQTL==TRUE, "R.squared.raw"], na.rm = T)` | `r median(df.LCL2[df.LCL2$type=="gene" & df.LCL2$eQTL==FALSE, "R.squared"], na.rm = T)` | `r median(df.LCL2[df.LCL2$eQTL==TRUE, "R.squared"], na.rm = T)` 
+mean Rsquared | `r mean(df[df$type=="gene" & df$eQTL==FALSE, "R.squared.raw"], na.rm = T)` | `r mean(df[df$eQTL==TRUE, "R.squared.raw"], na.rm = T)` | `r mean(df[df$type=="gene" & df$gtex.eQTL==FALSE, "R.squared.raw"], na.rm = T)` | `r mean(df[df$gtex.eQTL==TRUE, "R.squared.raw"], na.rm = T)` | `r mean(df.LCL2[df.LCL2$type=="gene" & df.LCL2$eQTL==FALSE, "R.squared"], na.rm = T)` | `r mean(df.LCL2[df.LCL2$eQTL==TRUE, "R.squared"], na.rm = T)` 
+median cor | `r median(df[df$type=="gene" & df$eQTL==FALSE, "cor.raw"], na.rm = T)` | `r median(df[df$eQTL==TRUE, "cor.raw"], na.rm = T)` | `r median(df[df$type=="gene" & df$gtex.eQTL==FALSE, "cor.raw"], na.rm = T)` | `r median(df[df$gtex.eQTL==TRUE, "cor.raw"], na.rm = T)` | `r median(df.LCL2[df.LCL2$type=="gene" & df.LCL2$eQTL==FALSE, "cor.raw"], na.rm = T)` | `r median(df.LCL2[df.LCL2$eQTL==TRUE, "cor.raw"], na.rm = T)` 
+mean cor | `r mean(df[df$type=="gene" & df$eQTL==FALSE, "cor.raw"], na.rm = T)` | `r mean(df[df$eQTL==TRUE, "cor.raw"], na.rm = T)` | `r mean(df[df$type=="gene" & df$gtex.eQTL==FALSE, "cor.raw"], na.rm = T)` | `r mean(df[df$gtex.eQTL==TRUE, "cor.raw"], na.rm = T)` | `r mean(df.LCL2[df.LCL2$type=="gene" & df.LCL2$eQTL==FALSE, "cor.raw"], na.rm = T)` | `r mean(df.LCL2[df.LCL2$eQTL==TRUE, "cor.raw"], na.rm = T)` 
+
+
+
+```{r, fig.height=8}
+ggarrange(ggarrange(ggplot(df[df$type=="gene", ],
+                           aes(x=cor.raw, col=eQTL, fill=eQTL)) +
+                      geom_histogram(bins = 100, alpha = 0.2) +
+                      #stat_ecdf(geom = "point") +
+                      geom_vline(xintercept = median(df[df$type=="gene", ]$cor.raw),
+                                 col=col.set[1]) +
+                      xlim(c(-1, 1)) +
+                      labs(x="across sample protein/mRNA correlation per gene (AFHRI-B cohort)") +
+                      scale_color_manual("AFHRI-B atrial appendage eQTLs",
+                                         values = col.set[1:2],
+                                         labels = c("non eQTL", "eQTL"))  +
+                      scale_fill_manual("AFHRI-B atrial appendage eQTLs",
+                                        values = col.set[1:2],
+                                        labels = c("non eQTL", "eQTL"))  +
+                      theme_bw() +
+                      theme(legend.position = c(0, 1),
+                            legend.background = element_rect(fill = NA),
+                            legend.justification = c(0,1)),
+                    ggplot(df[df$type=="gene", ],
+                           aes(x=cor.raw, col=eQTL, fill=eQTL)) +
+                      #geom_histogram(bins = 100, alpha = 0.2) +
+                      stat_ecdf(geom = "point") +
+                      geom_vline(xintercept = median(df[df$type=="gene", ]$cor.raw),
+                                 col=col.set[1]) +
+                      xlim(c(-1, 1)) +
+                      labs(x="across sample protein/mRNA correlation per gene (AFHRI-B cohort)",
+                           y="cdf") +
+                      scale_color_manual("AFHRI-B atrial appendage eQTLs",
+                                         values = col.set[1:2],
+                                         labels = c("non eQTL", "eQTL"))  +
+                      scale_fill_manual("AFHRI-B atrial appendage eQTLs",
+                                        values = col.set[1:2],
+                                        labels = c("non eQTL", "eQTL"))  +
+                      theme_bw() +
+                      theme(legend.position = c(0, 1),
+                            legend.background = element_rect(fill = NA),
+                            legend.justification = c(0,1)),
+                    ncol = 2, nrow = 1),#, common.legend = T, legend = "bottom"),
+          ggarrange(ggplot(df[df$type=="gene", ],
+                           aes(x=cor.raw, col=gtex.eQTL, fill=gtex.eQTL)) +
+                      geom_histogram(bins = 100, alpha = 0.2) +
+                      #stat_ecdf(geom = "point") +
+                      geom_vline(xintercept = median(df[df$type=="gene", ]$cor.raw),
+                                 col=col.set[1]) +
+                      xlim(c(-1, 1)) +
+                      labs(x="across sample protein/mRNA correlation per gene (AFHRI-B cohort)") +
+                      scale_color_manual("GTEx atrial appendage eQTLs",
+                                         values = col.set[1:2],
+                                         labels = c("non eQTL", "eQTL"))  +
+                      scale_fill_manual("GTEx atrial appendage eQTLs",
+                                        values = col.set[1:2],
+                                        labels = c("non eQTL", "eQTL"))  +
+                      theme_bw() +
+                      theme(legend.position = c(0, 1),
+                            legend.background = element_rect(fill = NA),
+                            legend.justification = c(0,1)),
+                    ggplot(df[df$type=="gene", ],
+                           aes(x=cor.raw, col=gtex.eQTL, fill=gtex.eQTL)) +
+                      #geom_histogram(bins = 100, alpha = 0.2) +
+                      stat_ecdf(geom = "point") +
+                      geom_vline(xintercept = median(df[df$type=="gene", ]$cor.raw),
+                                 col=col.set[1]) +
+                      xlim(c(-1, 1)) +
+                      labs(x="across sample protein/mRNA correlation per gene (AFHRI-B cohort)",
+                           y="cdf") +
+                      scale_color_manual("GTEx atrial appendage eQTLs",
+                                         values = col.set[1:2],
+                                         labels = c("non eQTL", "eQTL"))  +
+                      scale_fill_manual("GTEx atrial appendage eQTLs",
+                                        values = col.set[1:2],
+                                        labels = c("non eQTL", "eQTL"))  +
+                      theme_bw() +
+                      theme(legend.position = c(0, 1),
+                            legend.background = element_rect(fill = NA),
+                            legend.justification = c(0,1)),
+                    ncol = 2, nrow = 1),#, common.legend = T, legend = "bottom"),
+          ggarrange(ggplot(df.LCL[df.LCL$type=="gene", ],
+                           aes(x=cor.raw, col=eQTL, fill=eQTL)) +
+                      geom_histogram(bins = 100, alpha = 0.2) +
+                      #stat_ecdf(geom = "point") +
+                      geom_vline(xintercept = median(df.LCL[df.LCL$type=="gene", ]$cor.raw),
+                                 col=col.set[1]) +
+                      xlim(c(-1, 1)) +
+                      labs(x="across sample protein/mRNA correlation per gene (hapmap LCL data)") +
+                      scale_color_manual("hapmap LCL eQTLs",
+                                         values = col.set[1:2],
+                                         labels = c("non eQTL", "eQTL"))  +
+                      scale_fill_manual("hapmap LCL eQTLs",
+                                        values = col.set[1:2],
+                                        labels = c("non eQTL", "eQTL"))  +
+                      theme_bw() +
+                      theme(legend.position = c(0, 1),
+                            legend.background = element_rect(fill = NA),
+                            legend.justification = c(0,1)),
+                    ggplot(df.LCL[df.LCL$type=="gene", ],
+                           aes(x=cor.raw, col=eQTL, fill=eQTL)) +
+                      #geom_histogram(bins = 100, alpha = 0.2) +
+                      stat_ecdf(geom = "point") +
+                      geom_vline(xintercept = median(df.LCL[df.LCL$type=="gene", ]$cor.raw),
+                                 col=col.set[1]) +
+                      xlim(c(-1, 1)) +
+                      labs(x="across sample protein/mRNA correlation per gene (hapmap LCL data)",
+                           y="cdf") +
+                      scale_color_manual("hapmap LCL eQTLs",
+                                         values = col.set[1:2],
+                                         labels = c("non eQTL", "eQTL"))  +
+                      scale_fill_manual("hapmap LCL eQTLs",
+                                        values = col.set[1:2],
+                                        labels = c("non eQTL", "eQTL"))  +
+                      theme_bw() +
+                      theme(legend.position = c(0, 1),
+                            legend.background = element_rect(fill = NA),
+                            legend.justification = c(0,1)),
+                    ncol = 2, nrow = 1),#, common.legend = T, legend = "bottom"),
+          ggarrange(ggplot(df.LCL[which(df.LCL$type=="gene" &
+                                          df.LCL$symbol %in% df$id), ],
+                           aes(x=cor.raw, col=eQTL, fill=eQTL)) +
+                      geom_histogram(bins = 100, alpha = 0.2) +
+                      #stat_ecdf(geom = "point") +
+                      geom_vline(xintercept = median(df.LCL[which(df.LCL$type=="gene" &
+                                          df.LCL$symbol %in% df$id), ]$cor.raw),
+                                 col=col.set[1]) +
+                      xlim(c(-1, 1)) +
+                      labs(x="across sample protein/mRNA correlation per gene (hapmap LCL data)") +
+                      scale_color_manual("hapmap LCL eQTLs",
+                                         values = col.set[1:2],
+                                         labels = c("non eQTL", "eQTL"))  +
+                      scale_fill_manual("hapmap LCL eQTLs",
+                                        values = col.set[1:2],
+                                        labels = c("non eQTL", "eQTL"))  +
+                      theme_bw() +
+                      theme(legend.position = c(0, 1),
+                            legend.background = element_rect(fill = NA),
+                            legend.justification = c(0,1)),
+                    ggplot(df.LCL[which(df.LCL$type=="gene" &
+                                          df.LCL$symbol %in% df$id), ],
+                           aes(x=cor.raw, col=eQTL, fill=eQTL)) +
+                      #geom_histogram(bins = 100, alpha = 0.2) +
+                      stat_ecdf(geom = "point") +
+                      geom_vline(xintercept = median(df.LCL[which(df.LCL$type=="gene" &
+                                          df.LCL$symbol %in% df$id), ]$cor.raw),
+                                 col=col.set[1]) +
+                      xlim(c(-1, 1)) +
+                      labs(x="across sample protein/mRNA correlation per gene (hapmap LCL data)",
+                           y="cdf") +
+                      scale_color_manual("hapmap LCL eQTLs",
+                                         values = col.set[1:2],
+                                         labels = c("non eQTL", "eQTL"))  +
+                      scale_fill_manual("hapmap LCL eQTLs",
+                                        values = col.set[1:2],
+                                        labels = c("non eQTL", "eQTL"))  +
+                      theme_bw() +
+                      theme(legend.position = c(0, 1),
+                            legend.background = element_rect(fill = NA),
+                            legend.justification = c(0,1)),
+                    ncol = 2, nrow = 1),#, common.legend = T, legend = "bottom"),
+          ncol = 1, nrow = 4, heights = c(1,1,1,1),
+          labels = c("A", "B", "C", "C2"))
+```
+
+
+
+
+Ratios computed by taking the difference of per gene-and-sample-quantile normalized values:
+```{r}
+ratios.norm <- expr_p-expr_t
+#ratios.norm <- readRDS(file=paste0(get.path("dataset", local), "prot_trans_ratios.RDS"))
+ggarrange(ggplot(stack(as.data.frame(ratios.norm[, 1:25]))) +
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="samples"),
+          ggplot(stack(as.data.frame(t(ratios.norm[1:25,])))) + 
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="genes"),
+          nrow = 1, ncol = 2,
+          heights = c(1,1))
+
+# saveRDS(ratios.norm,
+#         file=paste0(get.path("dataset", local), "prot_trans_ratios.RDS"))
+```
+
+Ratios computed by taking the difference of per sample-quantile-normalized values:
+```{r}
+ratios <- expression_p-expression_t
+ggarrange(ggplot(stack(as.data.frame(ratios[, 1:25]))) +
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="samples"),
+          ggplot(stack(as.data.frame(t(ratios[1:25,])))) + 
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="genes"),
+          nrow = 1, ncol = 2)
+```
+
+Those ratios we can again quantile-normalize per gene:
+```{r}
+ratios_norm <- correct.linewise(ratios)
+ggarrange(ggplot(stack(as.data.frame(ratios_norm[, 1:25]))) +
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="samples"),
+          ggplot(stack(as.data.frame(t(ratios_norm[1:25,])))) + 
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="genes"),
+          nrow = 1, ncol = 2)
+```
+
+Let's see, how much the results differ:
+
+Correlation between ratios of per gene-and-sample-quantile normalized values and raw ratios
+```{r}
+test1 <- cor(t(ratios.norm), t(ratios))
+signif(test1[1:10, 1:8], digits = 3)
+```
+
+Correlation between ratios of per gene-and-sample-quantile normalized values and per gene-quantile-normalized values of the raw ratios:
+```{r}
+test2 <- cor(t(ratios.norm), t(ratios_norm))
+signif(test2[1:10, 1:8], digits = 3)
+```
+
+All the different ways of normalizing give results that are quite similar.  
+Another approach is to regress out the covariates (and additionally RIN-score/protein concentration) before computing the ratio (difference).
+```{r, eval=F}
+# calculate residuals
+
+setwd("/home/icb/ines.assum/projects/symAtrial_QTL/scripts")
+# setwd("/Users/ines/Documents/ICB/PhD/projects/symAtrial_QTL/scripts")
+
+source("helper/helper.R")
+local <- F
+
+data_path <- get.path("dataset", local)
+# data_path <- "/Users/ines/Documents/ICB/PhD/projects/symAtrial_QTL/data/current/AFHRI_B/"
+expression_p <- readRDS(paste0(data_path, "AFHRI_B_proteomics_QC_symbol.RDS"))
+colnames(expression_p) <- sub(".RAA","", colnames(expression_p))
+
+expression_t <- readRDS(paste0(data_path, "AFHRI_B_transcriptomics_QC_symbol.RDS"))
+colnames(expression_t) <- sub(".RAA", "", colnames(expression_t))
+
+match_s <- intersect(colnames(expression_t), colnames(expression_p))
+match_g <- intersect(rownames(expression_t), rownames(expression_p))
+expression_t2 <- expression_t[match_g, match_s]
+expression_p2 <- expression_p[match_g, match_s]
+
+pheno_t <- readRDS(paste0(data_path, "AFHRI_B_transcriptomics_phenos_symbol.RDS"))
+rownames(pheno_t) <- sub(".RAA", "", pheno_t$externID)
+
+pheno_p <- readRDS(paste0(data_path, "AFHRI_B_proteomics_phenos_symbol.RDS"))
+rownames(pheno_p) <- sub(".RAA","", pheno_p$externID)
+
+identical(rownames(pheno_t), colnames(expression_t))
+identical(rownames(pheno_p), colnames(expression_p))
+
+phenos_t2 <- pheno_t[match_s, c("age", "sex", "BMI", "overall_AF", "fibro.score", "RIN")]
+phenos_p2 <- pheno_p[match_s, c("age", "sex", "BMI", "overall_AF", "fibro.score", "Protein.c..ug.ul.")]
+
+residuals_trans <- expression_t2
+for(i in 1:length(rownames(residuals_trans))){
+  #i=22
+  trans <- t(data.frame(expression_t2[i, ]))
+  residuals_trans[i, ] <- resid(lm(data = phenos_t2,
+                                   trans ~ age + sex + BMI + overall_AF + fibro.score + RIN,
+                                   na.action=na.exclude))
+}
+residuals_trans <- residuals_trans[, colSums(is.na(residuals_trans))<10]
+
+residuals_prot <- expression_p2
+for(i in 1:length(rownames(residuals_prot))){
+  #i=22
+  prot <- t(data.frame(expression_p2[i, ]))
+  residuals_prot[i, ] <- resid(lm(data = phenos_p2,
+                                  prot ~ age + sex + BMI + overall_AF + fibro.score + Protein.c..ug.ul.,
+                                  na.action=na.exclude))
+}
+residuals_prot <- residuals_prot[, colSums(is.na(residuals_prot))<10]
+
+residuals_trans <- residuals_trans[, intersect(colnames(residuals_trans), colnames(residuals_prot))]
+residuals_prot <- residuals_prot[, intersect(colnames(residuals_trans), colnames(residuals_prot))]
+identical(rownames(residuals_trans), rownames(residuals_prot))
+identical(colnames(residuals_trans), colnames(residuals_prot))
+
+source("preprocessing/correction/normalization/norm.R")
+res_t <- correct.linewise(residuals_trans)
+res_p <- correct.linewise(residuals_prot)
+
+ratios_cov <- res_p-res_t
+# saveRDS(ratios_cov,
+#         file=paste0(get.path("dataset", local), "prot_trans_ratios_cov.RDS"))
+```
+
+```{r}
+ratios_cov <- readRDS(file=paste0(get.path("dataset", local), "prot_trans_ratios_cov.RDS"))
+dim(ratios_cov)
+ggarrange(ggplot(stack(as.data.frame(ratios_cov[, 1:25]))) +
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="samples"),
+          ggplot(stack(as.data.frame(t(ratios_cov[1:25,])))) + 
+            geom_boxplot(aes(x = ind, y = values)) +
+            theme_bw() +
+            theme(axis.text.x = element_blank()) +
+            labs(x="genes"),
+          nrow = 1, ncol = 2)
+```
+
+
+As transcript and protein values aren't absolute measurements, we choose to perform QTL analyses including PEER on differences of the per-gene-quantile-normalization transcripts and proteins as well as the differences of the per-gene-quantile-normalization residuals after correcting for key covariates. 
+
+```{r}
+QTL.table <- readRDS(paste0(get.path("results", local),
+                          "peer/QTL_table_imp.RDS"))
+QTL.table$cov_sd <- factor(QTL.table$cov_sd, levels = c("factors_no_cov", "factors_fibro", "factors_cov"))
+
+p.r <- ggplot(QTL.table[QTL.table$type %in% c("ratios", "ratios_cov"), ],
+       aes(x=Nk, y=FDR.0.05_Genes, col=cov_sd)) +
+    geom_point() +
+    geom_line() +
+  ylim(c(0,20)) +
+    scale_color_manual("covariates:",
+                     values = col.set,
+                     labels = c("PEER factors only",
+                                "PEER factors and fibrosis score",
+                                "PEER factors, age, sex, BMI, disease status and fibrosis score")) +
+    facet_wrap(norm_sd~type, ncol = 4) +
+    labs(title="protein-to-mRNA ratios: number of significant genes at FDR < 0.05",
+              x="number of PEER factors",
+              y="number of genes",
+              col="covariates") +
+    theme_bw() +
+  theme(legend.position = "bottom")
+
+p.r
+```
+
+PEER factors do not really change the outcome, it seems like they are just picking up noise. We therefore choose a model without PEER factors. Also correcting transcriptomics and proteomics data for covariates before calculating ratios decreases the number of discoveries. Also notice, that for ratios corrected for covariates, PEER factors with fibrosis score and PEER factors with age, sex, BMI, disease status and fibrosis score do not make sense.
+
+Let's have a closer look at the genes with ratio QTLs in the different conditions: 
+
+* "ratios", "natural", "factors_no_cov", "eqtl_nk00.RDS"
+* "ratios", "normalized", "factors_no_cov", "eqtl_nk00.RDS"
+* "ratios", "normalized", "factors_fibro", "eqtl_nk06.RDS"
+* "ratios", "normalized", "factors_fibro", "eqtl_nk09.RDS"
+
+```{r}
+res.gene <- readRDS(paste0(get.path("results", local), "imputed/cis/QTL_res_genes_per_group.RDS"))
+
+ratio.qtl.table <- readRDS(paste0(get.path("results", local),
+                                  paste("imputed", "cis", "linear", "ratios", "natural", "factors_no_cov", "eqtl_nk00.RDS", sep="/")))$cis$eqtls
+lin.nat.nocov.0 <-sort(unique(as.character(ratio.qtl.table[ratio.qtl.table$FDR<0.05, "gene"])))
+
+ratio.qtl.table <- readRDS(paste0(get.path("results", local),
+                                  paste("imputed", "cis", "linear", "ratios", "normalized", "factors_fibro", "eqtl_nk06.RDS", sep="/")))$cis$eqtls
+lin.norm.fibro.6 <-sort(unique(as.character(ratio.qtl.table[ratio.qtl.table$FDR<0.05, "gene"])))
+
+ratio.qtl.table <- readRDS(paste0(get.path("results", local),
+                                  paste("imputed", "cis", "linear", "ratios", "normalized", "factors_fibro", "eqtl_nk09.RDS", sep="/")))$cis$eqtls
+lin.norm.fibro.9 <-sort(unique(as.character(ratio.qtl.table[ratio.qtl.table$FDR<0.05, "gene"])))
+
+ratio.qtl.table <- readRDS(paste0(get.path("results", local),
+                                  paste("imputed", "cis", "linear", "ratios", "normalized", "factors_no_cov", "eqtl_nk00.RDS", sep="/")))$cis$eqtls
+lin.norm.nocov.0 <-sort(unique(as.character(ratio.qtl.table[ratio.qtl.table$FDR<0.05, "gene"])))
+
+print("pQTL genes:")
+sort(res.gene[["pQTL"]])
+
+print("res pQTL genes:")
+sort(res.gene[["respQTL"]])
+
+print("Group5 genes (independent pQTLs):")
+sort(res.gene[["Group5"]])
+
+print("no normalization, no covariates, no PEER factors:")
+lin.nat.nocov.0
+
+print("normalization, fibro scores, 6 PEER:")
+lin.norm.fibro.6
+
+print("normalization, fibro scores, 9 PEER:")
+lin.norm.fibro.9
+
+print("normalization, no covariates, no PEER factors:")
+lin.norm.nocov.0
+```
+
+Both results for fibro-score as a covariate find the gene YBX3, which does not only fall into the group 5 (independent pQTLs by posttranscriptional regulation) but is also a RBP.
+
+Depending on the number of PEER factors, we find at most 16 ratioQTL-genes for 6 and 9 factors. Short summary about the genes found (differing between 6 and 9 factors).
+`r lin.norm.fibro.6`
+
+HP:  
+This gene encodes a preproprotein, which is processed to yield both alpha and beta chains, which subsequently combine as a tetramer to produce haptoglobin. Haptoglobin functions to bind free plasma hemoglobin, which allows degradative enzymes to gain access to the hemoglobin, while at the same time preventing loss of iron through the kidneys and protecting the kidneys from damage by hemoglobin. Mutations in this gene and/or its regulatory regions cause ahaptoglobinemia or hypohaptoglobinemia. This gene has also been linked to diabetic nephropathy, the incidence of coronary artery disease in type 1 diabetes, Crohn's disease, inflammatory disease behavior, primary sclerosing cholangitis, susceptibility to idiopathic Parkinson's disease, and a reduced incidence of Plasmodium falciparum malaria. The protein encoded also exhibits antimicrobial activity against bacteria. A similar duplicated gene is located next to this gene on chromosome 16. Multiple transcript variants encoding different isoforms have been found for this gene.
+
+IMMT:  
+IMMT (Inner Membrane Mitochondrial Protein) is a Protein Coding gene. Diseases associated with IMMT include Melanoma-Associated Retinopathy and Gracile Syndrome.  
+Component of the MICOS complex, a large protein complex of the mitochondrial inner membrane that plays crucial roles in the maintenance of crista junctions, inner membrane architecture, and formation of contact sites to the outer membrane. Plays an important role in the maintenance of the MICOS complex stability and the mitochondrial cristae morphology.
+
+TST:  
+This is one of two neighboring genes encoding similar proteins that each contain two rhodanese domains. The encoded protein is localized to the mitochondria and catalyzes the conversion of thiosulfate and cyanide to thiocyanate and sulfite. In addition, the protein interacts with 5S ribosomal RNA and facilitates its import into the mitochondria. Alternative splicing results in multiple transcript variants.
+
+UBR4:  
+The protein encoded by this gene is an E3 ubiquitin-protein ligase that interacts with the retinoblastoma-associated protein in the nucleus and with calcium-bound calmodulin in the cytoplasm. The encoded protein appears to be a cytoskeletal component in the cytoplasm and part of the chromatin scaffold in the nucleus. In addition, this protein is a target of the human papillomavirus type 16 E7 oncoprotein.  
+E3 ubiquitin-protein ligase which is a component of the N-end rule pathway. Recognizes and binds to proteins bearing specific N-terminal residues that are destabilizing according to the N-end rule, leading to their ubiquitination and subsequent degradation. Together with clathrin, forms meshwork structures involved in membrane morphogenesis and cytoskeletal organization. Regulates integrin-mediated signaling. May play a role in activation of FAK in response to cell-matrix interactions. Mediates ubiquitination of ACLY, leading to its subsequent degradation.
+
+For 9 factors:
+`r lin.norm.fibro.9`
+
+COL8A1:  
+This gene encodes one of the two alpha chains of type VIII collagen. The gene product is a short chain collagen and a major component of the basement membrane of the corneal endothelium. The type VIII collagen fibril can be either a homo- or a heterotrimer. Alternatively spliced transcript variants encoding the same protein have been observed.  
+Macromolecular component of the subendothelium. Major component of the Descemet's membrane (basement membrane) of corneal endothelial cells. Also component of the endothelia of blood vessels. Necessary for migration and proliferation of vascular smooth muscle cells and thus, has a potential role in the maintenance of vessel wall integrity and structure, in particular in atherogenesis.
+Vastatin, the C-terminal fragment comprising the NC1 domain, inhibits aortic endothelial cell proliferation and causes cell apoptosis.
+
+EPHX1:  
+Human EPHX1 orthologues were found in 127 organisms. Human microsomal epoxide hydrolase is coded by EPHX1 gene located on chromosome 1 (1q42.12). Three transcription variants differing in the 5??-untranslated region have been identified with length of 455 amino acids.
+
+SLC25A4:
+This gene is a member of the mitochondrial carrier subfamily of solute carrier protein genes. The product of this gene functions as a gated pore that translocates ADP from the cytoplasm into the mitochondrial matrix and ATP from the mitochondrial matrix into the cytoplasm. The protein forms a homodimer embedded in the inner mitochondria membrane. Mutations in this gene have been shown to result in autosomal dominant progressive external opthalmoplegia and familial hypertrophic cardiomyopathy.
+
+TIMM10:  
+Mitochondrial import inner membrane translocase subunit Tim10 is an enzyme that in humans is encoded by the TIMM10 gene.
+TIMM10 belongs to a family of evolutionarily conserved proteins that are organized in heterooligomeric complexes in the mitochondrial intermembrane space. These proteins mediate the import and insertion of hydrophobic membrane proteins into the mitochondrial inner membrane.
+
+```{r, eval=T}
+QTL.res <- readRDS(paste0(get.path("results", local),
+                          "peer/QTL_table_imp.RDS"))
+QTL.res$cov_sd <- factor(QTL.res$cov_sd, levels = c("factors_no_cov", "factors_fibro", "factors_cov"))
+
+p1 <- ggplot(QTL.res[QTL.res$type=="eqtl", ], aes(x=Nk, y=FDR.0.05_Genes, col=cov_sd)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual("covariates:",
+                     values = col.set,
+                     labels = c("PEER factors only",
+                                "PEER factors and fibrosis score",
+                                "PEER factors, age, sex, BMI, disease status and fibrosis score")) +
+  ylim(0, 1100) +
+  labs(list(title="eQTL", x="number of PEER factors", y="number of genes")) +
+  theme_bw() +
+  facet_grid(norm_sd~.)
+
+p2 <- ggplot(QTL.res[QTL.res$type=="pqtl", ], aes(x=Nk, y=FDR.0.05_Genes, col=cov_sd)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual("covariates:",
+                     values = col.set,
+                     labels = c("PEER factors only",
+                                "PEER factors and fibrosis score",
+                                "PEER factors, age, sex, BMI, disease status and fibrosis score")) +
+  ylim(0, 120) +
+  labs(list(title="pQTL", x="number of PEER factors", y="number of genes")) +
+  theme_bw() +
+  facet_grid(norm_sd~.)
+
+p3 <- ggplot(QTL.res[QTL.res$type=="eqtl_res", ], aes(x=Nk, y=FDR.0.05_Genes, col=cov_sd)) +
+  geom_line() +
+  geom_point() +
+  ylim(0, 75) +
+  scale_color_manual("covariates:",
+                     values = col.set,
+                     labels = c("PEER factors only",
+                                "PEER factors and fibrosis score",
+                                "PEER factors, age, sex, BMI, disease status and fibrosis score")) +
+  labs(list(title="residual eQTL", x="number of PEER factors", y="number of genes")) +
+  theme_bw() +
+  facet_grid(norm_sd~.)
+
+p4 <- ggplot(QTL.res[QTL.res$type=="pqtl_res", ], aes(x=Nk, y=FDR.0.05_Genes, col=cov_sd)) +
+  geom_line() +
+  geom_point() +
+  ylim(0, 50) +
+  scale_color_manual("covariates:",
+                     values = col.set,
+                     labels = c("PEER factors only",
+                                "PEER factors and fibrosis score",
+                                "PEER factors, age, sex, BMI, disease status and fibrosis score")) +
+  labs(list(title="residual pQTL", x="number of PEER factors", y="number of genes")) +
+  theme_bw() +
+  facet_grid(norm_sd~.)
+
+p5 <- ggplot(QTL.res[QTL.res$type=="ratios", ], aes(x=Nk, y=FDR.0.05_Genes, col=cov_sd)) +
+  geom_line() +
+  geom_point() +
+  ylim(0, 25) +
+  scale_color_manual("covariates:",
+                     values = col.set,
+                     labels = c("PEER factors only",
+                                "PEER factors and fibrosis score",
+                                "PEER factors, age, sex, BMI, disease status and fibrosis score")) +
+  labs(list(title="ratios", x="number of PEER factors", y="number of genes")) +
+  theme_bw() +
+  facet_grid(norm_sd~.)
+
+peer <- ggarrange(p1, p2, p3, p4, p5,
+                  nrow = 1, ncol = 5,
+                  labels = c("A", "B", "C", "D", "E"),
+                  common.legend = TRUE, legend = "bottom")
+peer
+
+pdf(file = "peer_tables_FDR.pdf", width = 30, height = 10)
+print(peer)
+dev.off()
+
+
+p1 <- ggplot(QTL.res[QTL.res$type=="eqtl", ], aes(x=Nk, y=pval.1e.5_Genes, col=cov_sd)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual("covariates:",
+                     values = col.set,
+                     labels = c("PEER factors only",
+                                "PEER factors and fibrosis score",
+                                "PEER factors, age, sex, BMI, disease status and fibrosis score")) +
+  ylim(0, 1050) +
+  labs(list(title="eQTL", x="number of PEER factors", y="number of genes")) +
+  theme_bw() +
+  facet_grid(norm_sd~.)
+
+p2 <- ggplot(QTL.res[QTL.res$type=="pqtl", ], aes(x=Nk, y=pval.1e.5_Genes, col=cov_sd)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual("covariates:",
+                     values = col.set,
+                     labels = c("PEER factors only",
+                                "PEER factors and fibrosis score",
+                                "PEER factors, age, sex, BMI, disease status and fibrosis score")) +
+  ylim(0, 120) +
+  labs(list(title="pQTL", x="number of PEER factors", y="number of genes")) +
+  theme_bw() +
+  facet_grid(norm_sd~.)
+
+p3 <- ggplot(QTL.res[QTL.res$type=="eqtl_res", ], aes(x=Nk, y=pval.1e.5_Genes, col=cov_sd)) +
+  geom_line() +
+  geom_point() +
+  ylim(0, 75) +
+  scale_color_manual("covariates:",
+                     values = col.set,
+                     labels = c("PEER factors only",
+                                "PEER factors and fibrosis score",
+                                "PEER factors, age, sex, BMI, disease status and fibrosis score")) +
+  labs(list(title="residual eQTL", x="number of PEER factors", y="number of genes")) +
+  theme_bw() +
+  facet_grid(norm_sd~.)
+
+p4 <- ggplot(QTL.res[QTL.res$type=="pqtl_res", ], aes(x=Nk, y=pval.1e.5_Genes, col=cov_sd)) +
+  geom_line() +
+  geom_point() +
+  ylim(0, 50) +
+  scale_color_manual("covariates:",
+                     values = col.set,
+                     labels = c("PEER factors only",
+                                "PEER factors and fibrosis score",
+                                "PEER factors, age, sex, BMI, disease status and fibrosis score")) +
+  labs(list(title="residual pQTL", x="number of PEER factors", y="number of genes")) +
+  theme_bw() +
+  facet_grid(norm_sd~.)
+
+p5 <- ggplot(QTL.res[QTL.res$type=="ratios", ], aes(x=Nk, y=pval.1e.5_Genes, col=cov_sd)) +
+  geom_line() +
+  geom_point() +
+  ylim(0, 25) +
+  scale_color_manual("covariates:",
+                     values = col.set,
+                     labels = c("PEER factors only",
+                                "PEER factors and fibrosis score",
+                                "PEER factors, age, sex, BMI, disease status and fibrosis score")) +
+  labs(list(title="ratios", x="number of PEER factors", y="number of genes")) +
+  theme_bw() +
+  facet_grid(norm_sd~.)
+
+peer <- ggarrange(p1, p2, p3, p4, p5,
+                  nrow = 1, ncol = 5,
+                  labels = c("A", "B", "C", "D", "E"),
+                  common.legend = TRUE, legend = "bottom")
+peer
+
+pdf(file = "peer_tables_pval_1e-5.pdf", width = 30, height = 10)
+print(peer)
+dev.off()
+
+```
+
+
+

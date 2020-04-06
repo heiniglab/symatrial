@@ -1,0 +1,497 @@
+---
+title: "TF activity analyses on Human Atria"
+author: "Ines Assum"
+date: \today
+graphics: yes
+header-includes:
+  \usepackage{graphicx, fancyhdr, multicol, xcolor}
+  \usepackage{sectsty, titling, lmodern}
+  \usepackage[T1]{fontenc}
+  \renewcommand*\familydefault{\sfdefault}
+  \definecolor{myblue}{RGB}{31, 120, 180}
+  \allsectionsfont{\color{myblue}}
+  \sectionfont{\color{myblue}\sectionrule{3ex}{0pt}{-1ex}{1pt}}
+  \pretitle{\begin{center}\LARGE\bfseries\color{myblue}}
+  \posttitle{\par\end{center}\vskip 0.5em}
+  \pagestyle{fancy}
+  \lhead{Ines Assum}
+  \rhead{\today}
+  \chead{TF activity analyses on Human Atria}
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = paste0("../../../reports/", substr(basename(inputFile), 1, nchar(inputFile) - 4), Sys.Date(), '.pdf')) })
+output: 
+  pdf_document:
+    toc: FALSE
+    number_sections: TRUE
+---
+
+```{r setup, include=FALSE}
+options(width = 90)
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+```
+
+```{r, echo=F, cache=F}
+# Intro ----
+# setwd("~/work/symAtrial_QTL/scripts/analysis/TF_activity")
+ 
+source("../../helper/helper.R")
+source("../peer_tables/peer_result.R")
+source("../boxplots/boxplots.R")
+source("../../preprocessing/correction/normalization/norm.R")
+source("../../preprocessing/imputation/run_imputation.R")
+
+library(ggplot2)
+library(ggpubr)
+library(RColorBrewer)
+library(pheatmap)
+library(GenABEL)
+library(Gviz)
+library(reshape2)
+library(fgsea)
+library(plsgenomics)
+library(eulerr)
+library(GraphicalModels)
+
+local=T
+col.paired <- brewer.pal(n = 11, "Paired")
+col.set <- col.paired[c(2,8,9)]
+data_dir <- get.path("data", local)
+
+get.duplicates <- function(df, cols){
+  df2 <- data.frame(table(df[, cols]))
+  df2 <- df2[df2$Freq>1, ]
+  colnames(df2) <- c(cols, "Freq")
+  df <- merge(df,
+              df2[cols],
+              all.y=T)
+}
+```
+
+In the following, for transcript expression we always consider the residuals
+after correcting for fibrosis score (i.e. proxy for cell type composition) and RIN.  
+For protein expression, we always take the residuals after correcting for
+fibrosis-score and the protein concentration of the original sample.
+Also note, that it is a technical constraint, that TFs most likely could not be
+measured in our proteomics data due to reasons of total number of molecule abundance.
+
+# Transcription Factor Activity (TFA) of NKX2-5
+
+Here we want to have a closer look at the transcription factor NKX2-5, which has a trans eQTL for the GWAS hit rs9481842.  
+Transcription factor activity can be estimated using expression data.
+
+```{r}
+# load expression/proteomics(pheno) data ----
+expr.trans <- readRDS(paste0(get.path("dataset", local),
+                              "AFHRI_B_transcriptomics_QC_symbol.RDS"))
+pheno.trans <- readRDS(paste0(get.path("dataset", local),
+                              "AFHRI_B_transcriptomics_phenos_symbol.RDS"))
+expr.prot <- readRDS(paste0(get.path("dataset", local),
+                              "AFHRI_B_proteomics_QC_symbol.RDS"))
+pheno.prot <- readRDS(paste0(get.path("dataset", local),
+                              "AFHRI_B_proteomics_phenos_symbol.RDS"))
+scores <- readRDS(paste0(get.path("dataset", local),
+                         "risk_score/GPS_scores_EUR_AFHRI-B.RDS"))
+scores$AF_Status <- factor(scores$AF_Status, levels = c(0,1,2),
+                           labels = c("ctrl", "preOP", "only postOP"))
+scores$fibro.score.imp.prot.meta <- NULL
+scores <- scores[!duplicated(scores), ]
+rownames(scores) <- scores$externID2
+
+if(!file.exists(paste0(get.path("dataset", local),
+                       "AFHRI_B_transcriptomics_QC_symbol_residuals_fibro_RIN.RDS"))){
+  res.expr.trans <- expr.trans
+  for(i in 1:length(rownames(expr.trans))){
+    trans <- t(data.frame(expr.trans[i, ]))
+    res.expr.trans[i, ] <- resid(lm(trans ~ pheno.trans$fibro.score + pheno.trans$RIN,
+                                    na.action=na.exclude))
+    if(i %% 1000 == 0) print(paste0("Gene ", i, " / ", dim(expr.trans)[1], " done"))
+  }
+  saveRDS(res.expr.trans,
+          file = paste0(get.path("dataset", local),
+                       "AFHRI_B_transcriptomics_QC_symbol_residuals_fibro_RIN.RDS"))
+}else{
+  res.expr.trans <- readRDS(paste0(get.path("dataset", local),
+                       "AFHRI_B_transcriptomics_QC_symbol_residuals_fibro_RIN.RDS"))
+}
+
+if(!file.exists(paste0(get.path("dataset", local),
+                       "AFHRI_B_proteomics_QC_symbol_residuals_fibro_prot_conc.RDS"))){
+  expr.prot2 <- impute.data(expr.prot)
+  res.expr.prot <- expr.prot2
+  for(i in 1:length(rownames(expr.prot2))){
+    #i=22
+    prot <- t(data.frame(expr.prot2[i, ]))
+    res.expr.prot[i, ] <- resid(lm(prot ~ pheno.prot$fibro.score + pheno.prot$Protein.c..ug.ul.,
+                                    na.action=na.exclude))
+    if(i %% 100 == 0) print(paste0("Gene ", i, " / ", dim(expr.prot2)[1], " done"))
+  }
+  saveRDS(res.expr.prot,
+          file = paste0(get.path("dataset", local),
+                       "AFHRI_B_proteomics_QC_symbol_residuals_fibro_prot_conc.RDS"))
+}else{
+  res.expr.prot <- readRDS(paste0(get.path("dataset", local),
+                       "AFHRI_B_proteomics_QC_symbol_residuals_fibro_prot_conc.RDS"))
+}
+
+expr.trans.z <- correct.linewise(expr.trans)
+expr.prot.z <- correct.linewise(expr.prot)
+res.expr.trans.z <- correct.linewise(res.expr.trans)
+res.expr.prot.z <- correct.linewise(res.expr.prot)
+```
+
+```{r}
+TF.act <- data.frame(pheno.trans[, c("externID", "fibro.score")],
+                     "NKX2.5"=as.numeric(res.expr.trans["NKX2-5", ]),
+                     "externID2"=gsub(".RAA", "", pheno.trans$externID),
+                     stringsAsFactors = F)
+snp <- c("rs9481842")
+if(!file.exists(paste0(get.path("genotype", local),
+                       "SNP_data_TF_activity.RDS"))){
+  load(paste0(get.path("genotype", local),
+              "AFHRI_B_imputed_gwaa_data.RData"))
+  geno <- get.genos(snp, AFHRI_B_imp, local)
+  saveRDS(geno,
+          file = paste0(get.path("genotype", local),
+                       "SNP_data_TF_activity.RDS"))
+} else {
+  geno <- readRDS(paste0(get.path("genotype", local),
+                       "SNP_data_TF_activity.RDS"))
+}
+df <- merge(TF.act, scores,
+            all.x = T)
+df <- merge(df, geno,
+            by.x = c("externID2", "sex"), by.y = c("id", "sex"),
+            all=T)
+```
+
+## ChIPseq data
+Next, we would like to estimate the NKX2-5 transcription factor activity based on its target gene expression.  
+As resources we use ChIPseq signals for the NKX2-5 TF in human iPSC-derived cardiomyocytes input.
+To narrow down functional binding sites, possible filter options are promoter regions (using a classic window around the TSS of genes measured with our micro-array), open chromatin regions based on the Roadmap atrial appendage ChromHMM states (15 state model core marks) as well as including promoter-capture HiC data to link functional binding sites in non-promoter regions.
+
+```{r}
+#print("Load gencode basic annotations and annotations for lncRNAs for TSS annotations.")
+#print("Determine promoter regions based on TSS.")
+f.locs <- paste0(get.path("locations", local),
+                 "gencode.v31lift37.gene.locations.RDS")
+f.prom <- paste0(get.path("locations", local),
+                 "gencode.v31lift37.promoters.RDS")
+if(!file.exists(f.locs) | !file.exists(f.prom)){
+  locs1 <- rtracklayer::import(paste0(get.path("locations", local),
+                                     "gencode.v31lift37.basic.annotation.gtf"))
+  locs2 <- rtracklayer::import(paste0(get.path("locations", local),
+                                      "gencode.v31lift37.long_noncoding_RNAs.gtf"))
+
+  locs1 <- locs1[locs1$type=="transcript" & locs1$gene_name %in% rownames(expr.trans)]
+  locs2 <- locs2[locs2$type=="transcript" & locs2$gene_name %in% rownames(expr.trans)]
+  prom <- c(promoters(locs1[, c("type", "gene_name")]),
+            promoters(locs2[, c("type", "gene_name")]))
+  locs <- c(locs1[, c("type", "gene_name")],
+            locs2[, c("type", "gene_name")])
+  saveRDS(locs, file = f.locs)
+  saveRDS(prom, file = f.prom)
+} else {
+  locs <- readRDS(f.locs)
+  prom <- readRDS(f.prom)
+}
+
+f.locs.gene <- paste0(get.path("locations", local),
+                      "gencode.v31lift37.gene.level.locations.RDS")
+f.prom.gene <- paste0(get.path("locations", local),
+                      "gencode.v31lift37.gene.level.promoters.RDS")
+if(!file.exists(f.locs.gene) | !file.exists(f.prom.gene)){
+  prom.gene <- GRanges()
+  locs.gene <- GRanges()
+  counter <- 0
+  N <- length(unique(prom$gene_name))
+  for(gene in unique(prom$gene_name)){
+    counter <- counter+1
+    
+    locs.gene.temp <- locs[locs$gene_name==gene]
+    locs.gene.temp <- reduce(locs.gene.temp)
+    locs.gene.temp$gene_name <- gene
+    locs.gene <- c(locs.gene, locs.gene.temp)
+    
+    prom.gene.temp <- prom[prom$gene_name==gene]
+    prom.gene.temp <- reduce(prom.gene.temp)
+    prom.gene.temp$gene_name <- gene
+    prom.gene <- c(prom.gene, prom.gene.temp)
+    
+    if(counter %% 100 == 0) print(paste0(counter, " / ", N, " genes"))
+  }
+  saveRDS(locs.gene, file = f.locs.gene)
+  saveRDS(prom.gene, file = f.prom.gene)
+} else {
+  locs.gene <- readRDS(f.locs.gene)
+  prom.gene <- readRDS(f.prom.gene)
+}
+prom.gene$name <- prom.gene$gene_name
+rtracklayer::export.bed(con = paste0(get.path("locations", local),
+                                     "gencode.v31lift37.gene.level.promoters.bed"),
+                        object = prom.gene)
+
+print("Load atrial appendage ChromHMM states.")
+states <- rtracklayer::import(paste0(get.path("locations", local),
+                                     "functional_annotation/roadmap/E104_15/",
+                                     "E104_15_coreMarks_dense.bed"))
+
+active <- c("1_TssA", "2_TssAFlnk", "10_TssBiv",
+            "6_EnhG", "7_Enh", "11_BivFlnk", "12_EnhBiv")
+print("Open chromatin is annotated as regions annotated with the following states:")
+active
+```
+
+### GSE133833
+ChIPseq signal for NKX2-5 from the GSE133833 consisting of 15 samples from iPSC-derived cardiomyocytes featured in the Nature genetics article about electrocardiographic traits ["Allele-specific NKX2-5 binding underlies multiple genetic associations with human electrocardiographic traits"](https://www.nature.com/articles/s41588-019-0499-3).
+
+```{r}
+chip1 <- rtracklayer::import(paste0(get.path("locations", local),
+                                   "functional_annotation/NKX2-5/GSE133833/",
+                                   "GSE133833_NKX2-5.bed"))
+chip1o <- subsetByOverlaps(chip1, states[states$name %in% active],
+                            ignore.strand=T, minoverlap = 50)
+chip1prom <- subsetByOverlaps(chip1, prom.gene,
+                            ignore.strand=T, minoverlap = 50) #type = "within"
+chip1oprom <- subsetByOverlaps(chip1o, prom.gene,
+                            ignore.strand=T, minoverlap = 50)
+
+ov <- findOverlaps(chip1, locs.gene, ignore.strand=T, minoverlap = 50)
+tar.chip1 <- locs.gene[subjectHits(ov)]
+ov <- findOverlaps(chip1o, locs.gene, ignore.strand=T, minoverlap = 50)
+tar.chip1o <- locs.gene[subjectHits(ov)]
+ov <- findOverlaps(chip1, prom.gene, ignore.strand=T, minoverlap = 50)
+tar.chip1prom <- prom.gene[subjectHits(ov)]
+ov <- findOverlaps(chip1o, prom.gene, ignore.strand=T, minoverlap = 50)
+tar.chip1oprom <- prom.gene[subjectHits(ov)]
+```
+
+The GSE133833 chip seq signal contains `r length(chip1)` binding sites with a mean width of `r mean(width(chip1))` bp and a median width of `r median(width(chip1))` bp. `r length(chip1prom)` of the `r length(chip1)` binding sites overlap with promoter regions of expressed genes (`minoverlap=50bp`), `r length(chip1o)` of all binding sites are in open chromatin regions.
+
+For the GSE133833 dataset, we have binding sites in promoter regions of expressed genes for `r length(unique(tar.chip1prom$gene_name))` genes and `r length(unique(tar.chip1o$gene_name))` target genes for binding sites in open chromatin regions.
+
+## promoter-capture HiC to identify promoter-contacts
+A lot of binding sites are in open chromatin regions, however only few of them
+are in promoter regions. We want to filter for promoter regions and HiC contact
+points of those promoters.  
+For this we use published promoter-capture HiC data in iPSC-derived
+cardiomyocytes described in
+["A promoter interaction map for cardiovascular disease genetics"](https://doi.org/10.7554/eLife.35788.001)
+
+For our purposes, we use replicated interactions in iPSC-derived cardiomyocytes 
+("capt-CM-replicated-interactions-1kb.bedpe") available on array express
+under the ID ["E-MTAB-6014"](https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-6014/).
+To import the file with `rtracklayer::import()`, we needed to switch the name
+and score column (columns 7 and 8).
+
+
+```{bash, eval=F}
+awk '{print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $8 "\t" $7}' capt-CM-replicated-interactions-1kb.bedpe > capt-CM-replicated-interactions-1kb_reorder.bedpe
+```
+
+
+```{r}
+f.pairs <- paste0(get.path("locations", local),
+                  "functional_annotation/NKX2-5/E-MTAB-6014/CM+iPSC_Hi-C/",
+                  "capt-CM-replicated-interactions-1kb_GR_Pairs.RDS")
+if(!file.exists(f.pairs)){
+  hic <- rtracklayer::import(paste0(get.path("locations", local),
+                                    "functional_annotation/NKX2-5/E-MTAB-6014/CM+iPSC_Hi-C/",
+                                    "capt-CM-replicated-interactions-1kb_reorder.bedpe"))
+  test <- strsplit(hic@elementMetadata$name, "\\|")
+  library(plyr)
+  test2 <- ldply(test, rbind)
+  colnames(test2) <- c("gene_name1", "gene_name2")
+  test2$gene_name1 <- gsub("\\*.*", "", test2$gene_name1)
+  test2$gene_name2 <- gsub("\\*.*", "", test2$gene_name2)
+  hic@elementMetadata[, c("gene_name1", "gene_name2")] <- test2
+  saveRDS(hic, file = f.pairs)
+} else {
+  hic <- readRDS(f.pairs)
+}
+
+print(paste0("Number of replicated iPSC-derived cardiomyocytes promoter-capture HiC contacts: ",
+             length(hic)))
+#hic
+
+hic.prom <- hic@second
+hic.prom@elementMetadata <- hic@elementMetadata
+hic.prom$type <- "promoter"
+#print("Promoter-capture replicated bait regions (GRanges):")
+#hic.prom
+
+hic.target <- hic@first
+hic.target@elementMetadata <- hic@elementMetadata
+hic.target$type <- "target"
+#print("Promoter-capture replicated interaction contact regions GRanges:")
+#hic.target
+
+N <- length(unique(prom$gene_name))
+  
+print("Let's consider the overlap between promoter or promoter linked HiC regions and ChIPseq derived binding sites of NKX2-5:")
+print(paste0("for each of ", N, " genes ..."))
+print("1. get promoter regions based on window around TSS for all transcripts")
+print("2. find overlap with promoter-capture bait regions")
+print("3. add all contact/interaction regions for those promoter bait regions")
+print("4. annotate all bait and interaction regions with gene symbol")
+print("5. find all overlaps with ChIPseq ranges")
+print("6. remove duplicate ranges")
+print("7. annotate ChIPseq ranges with gene symbol")
+f.hic.chip <- paste0(get.path("locations", local),
+                     "functional_annotation/NKX2-5/",
+                     "iPSC-CM_E-MTAB-6014_HiC-pc_GSE133833_ChIPseq-NKX2-5_overlap.RDS")
+if(!file.exists(f.hic.chip)){
+  prom.linked <- GRanges()
+  bs.ov <- GRanges()
+  counter <- 0
+  for(gene in unique(prom$gene_name)){
+    counter <- counter+1
+    prom.linked.temp <- GRanges()
+    chip.temp <- GRanges()
+    ov <- findOverlaps(hic.prom, prom[prom$gene_name==gene],
+                       ignore.strand=T, minoverlap = 200)
+    prom.temp <- hic.prom[queryHits(ov)]
+    if(length(prom.temp)!=0) prom.temp$bait.prom <- gene
+    target.temp <- hic.target[queryHits(ov)]
+    if(length(target.temp)!=0) target.temp$bait.prom <- gene
+    try(prom.linked.temp <- c(prom.temp, target.temp))
+    if(length(prom.linked.temp)>0){
+      ov <- findOverlaps(prom.linked.temp, chip1,
+                         ignore.strand=T, minoverlap = 50)
+      chip.temp <- chip1[subjectHits(ov)]
+      chip.temp <- chip.temp[!duplicated(chip.temp)]
+      if(length(chip.temp)!=0) chip.temp$bait.prom <- gene
+      bs.ov <- c(bs.ov, chip.temp)
+    }
+    try(prom.linked <- c(prom.linked, prom.linked.temp))
+    if(counter %% 100 == 0) print(paste0(counter, " / ", N, " genes"))
+  }
+  saveRDS(list(bs.ov=bs.ov,
+               prom.linked=prom.linked),
+          file = f.hic.chip)
+} else {
+  bs.ov <- readRDS(f.hic.chip)[["bs.ov"]]
+  prom.linked <- readRDS(f.hic.chip)[["prom.linked"]]
+}
+
+print("filtered promoter (bait) and contact (interactions) GRanges:")
+length(prom.linked)
+
+print("NKX2-5 ChIPseq GRanges for GSE133833:")
+length(chip1)
+
+print("overlapping binding site regions reduced gene-level (distinct BS per gene)")
+length(bs.ov)
+
+print("overlap with open chromatin regions:")
+bs.ov.open <- subsetByOverlaps(bs.ov, states[states$name %in% active],
+                               minoverlap = 100)
+length(bs.ov.open)
+# rtracklayer::export.bed(con = paste0(get.path("locations", local),
+#                                      "functional_annotation/NKX2-5/",
+#                                      "HiC_ChIPseq_openChrom_NKX2-5_BSs.bed"),
+#                         object = bs.ov.open)
+```
+
+
+## Modeling TFA using expression data
+
+There are different approaches to estimate TFA
+
+* in general: convert expression values of target genes to Z-scores
+* sum of gene expression Z-scores of genes with a binding site (weights 0/1)
+* weighted sum by number of binding sites per gene of gene expression Z-scores
+* selection of target set, filtering:
+
+* promoter regions
+* promoter contact regions
+* open chromatin regions
+* overlap of different datasets
+
+### Sums / weighted sums for HiC-GSE133833 overlap
+```{r}
+chip1.linked <- data.frame(table(bs.ov$bait.prom),
+                           stringsAsFactors = F)
+colnames(chip1.linked) <- c("symbol", "chip1.linked")
+chip1.linked.open <- data.frame(table(bs.ov.open$bait.prom),
+                                stringsAsFactors = F)
+colnames(chip1.linked.open) <- c("symbol", "chip1.linked.open")
+
+weights <- merge(data.frame(symbol=rownames(expr.trans),
+                            stringsAsFactors = F),
+                 chip1.linked,
+                 all.x=T, sort=F)
+weights <- merge(weights,
+                 chip1.linked.open,
+                 all.x=T, sort=F)
+weights[is.na(weights)] <- 0
+rownames(weights) <- weights$symbol
+
+# saveRDS(weights, file = paste0(get.path("locations", local),
+#                                "functional_annotation/NKX2-5/",
+#                                "HiC_ChIPseq_openChrom_NKX2-5_BS_per_gene.RDS"))
+# write.table(weights,
+#             file = paste0(get.path("locations", local),
+#                           "functional_annotation/NKX2-5/",
+#                           "HiC_ChIPseq_openChrom_NKX2-5_BS_per_gene.txt"),
+#             row.names = F, col.names = T, quote = F, sep = "\t")
+
+weights["NKX2-5", c("chip1.linked", "chip1.linked.open")] <- c(0, 0)
+
+## weighted sum
+NKX25_chip1.linked.wsum <- unlist(data.frame(weights$chip1.linked %*% as.matrix(expr.trans.z[rownames(weights), ])))
+NKX25_chip1.linked.open.wsum <- unlist(data.frame(weights$chip1.linked.open %*% as.matrix(expr.trans.z[rownames(weights), ])))
+NKX25_chip1.linked.res.wsum <- unlist(data.frame(weights$chip1.linked %*% as.matrix(res.expr.trans.z[rownames(weights), ])))
+NKX25_chip1.linked.open.res.wsum <- unlist(data.frame(weights$chip1.linked.open %*% as.matrix(res.expr.trans.z[rownames(weights), ])))
+
+dfi <- merge(df,
+             data.frame(externID=colnames(res.expr.trans.z),
+                        NKX25_chip1.linked.wsum=NKX25_chip1.linked.wsum,
+                        NKX25_chip1.linked.open.wsum=NKX25_chip1.linked.open.wsum,
+                        NKX25_chip1.linked.res.wsum=NKX25_chip1.linked.res.wsum,
+                        NKX25_chip1.linked.open.res.wsum=NKX25_chip1.linked.open.res.wsum,
+                        TNNT2_expr=res.expr.trans.z["TNNT2", ],
+                        TNNC1_expr=res.expr.trans.z["TNNC1", ],
+                        CAV2_expr=res.expr.trans.z["CAV2", ],
+                        stringsAsFactors = F))
+rownames(dfi) <- dfi$externID
+```
+
+### Sums / weighted sums for ChIPseq data and overlaps
+
+```{r}
+con <- data.frame(table(tar.chip1o$gene_name), stringsAsFactors = F)
+colnames(con) <- c("symbol", "Freq.chip1")
+con <- merge(data.frame("symbol"=rownames(res.expr.trans.z),
+                        stringsAsFactors = F),
+             con,
+             all=T, sort=F)
+rownames(con) <- con$symbol
+```
+
+Residuals of expression after correcting for fibro.score and RIN (again Z-scores)
+```{r}
+# TF activity as sum of gene expression
+## 0/1
+NKX25_chip1.sum <-  colSums(res.expr.trans.z[rownames(con)[as.logical(con$chip1)], ])
+
+## weighted sum
+NKX25_chip1.wsum <- unlist(data.frame(con$chip1 %*% as.matrix(res.expr.trans.z[rownames(con), ])))
+
+df3 <- merge(df,
+             data.frame(externID=colnames(res.expr.trans.z),
+                        NKX25_chip1.sum=NKX25_chip1.sum,
+                        NKX25_chip1.wsum=NKX25_chip1.wsum,
+                        stringsAsFactors = F))
+```
+
+
+
+
+
+
+
+
+
