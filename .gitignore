@@ -1,0 +1,11 @@
+.DS_Store
+.Rhistory
+tmp_dir*
+tmp_run*
+*.vcf
+*.vcf.bgz
+*.RData
+*.RDS
+*.rdb
+*_cache
+E-GEUV-1_tpms.tsv
