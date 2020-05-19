@@ -11,7 +11,7 @@ Genome-wide association studies (GWAS) for atrial fibrillation (AF) have uncover
 
 We address a key hypothesis about the existence of core genes as postulated in the omnigenic model by [Liu et al.](https://doi.org/10.1016/j.cell.2019.04.014), *Cell* (2019). Core genes are central genes with trans-associations to GWAS loci, whose expression levels directly affect a disease phenotype. Here we sought to identify candidate core genes for AF to understand the contribution of trans-genetic effects in the pathology of AF. To prioritize genes satisfying the properties predicted by the omnigenic model, we evaluated the accumulation of trans-effects, their relevance in gene regulatory networks, and the disease association by the following strategy:
 
-![](core_gene_model_schema.png)
+![](/example_data/core_gene_model_schema.png)
 (Overview figure of our approach)
 
 
