@@ -101,6 +101,7 @@ if(!file.exists("c5.bp.v7.1.symbols.gmt")){
 ## Compute gene set enrichment analysis on eQTS ranking:
 ```{r}
 if(file.exists("c5.bp.v7.1.symbols.gmt")){
+  set.seed(1234)
   rank <- eQTS[, "tvalue"]
   names(rank) <- eQTS[, "id"]
   fgsea.res <- fgsea(gmt,
@@ -122,8 +123,9 @@ if(file.exists("c5.bp.v7.1.symbols.gmt")){
   lead <- data.frame(table(unlist( fgsea.res[fgsea.res$pval<0.01, "leadingEdge"])))
   hist(lead$Freq, breaks = 20,
        main = "Distribution: Frequencies of genes in multiple leading edges:")
-  print("Let's select the top three candidates that appear more than 10 times:")
-  as.character(lead[lead$Freq>10, "Var1"])
+  print("Let's select the top candidates that appear more than 5 times:")
+  candidates <- as.character(lead[lead$Freq>5, "Var1"])
+  print(candidates)
 }
 ```
 
@@ -133,15 +135,15 @@ Let's run a trans eQTL analysis for those three genes and the 109 AF GWAS SNPs:
 
 ```{r, message=FALSE}
 if(file.exists("c5.bp.v7.1.symbols.gmt")){
-  eQTL <- trans.core <- trans.qtl(prefix = "/tmp/example",
-                                  genotype_file_name = "1k_genomes_AF_snps.txt",
-                                  expression_file_name = t(df[, c("CD28", "IL10", "TNFSF4")]),
-                                  covariates_file_name = df$sex,
-                                  threshold = 1,
-                                  compute.all = T,
-                                  min.pv.by.genesnp = T,
-                                  save.memory = F,
-                                  load.qtls = T)
+  eQTL <- trans.qtl(prefix = "/tmp/example",
+                    genotype_file_name = "1k_genomes_AF_snps.txt",
+                    expression_file_name = t(df[, candidates]),
+                    covariates_file_name = df$sex,
+                    threshold = 1,
+                    compute.all = T,
+                    min.pv.by.genesnp = T,
+                    save.memory = F,
+                    load.qtls = T)
   print("Top trans eQTLs:")
   head(eQTL$all$eqtls[order(eQTL$all$eqtls$pvalue), ])
 }

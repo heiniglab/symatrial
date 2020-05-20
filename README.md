@@ -25,7 +25,21 @@ iii) Establish the link between the core gene candidates and the disease based o
 
 
 ## Installation instructions
-Analysis was done using R 3.4.1. We provide a conda environment for version specific packages (explicitely including PEER and MatrixEQTL). A docker will be supplied soon.   
+Analysis was done using R 3.4.1.
+
+In general, four packages need to be installed
+* devtools
+* fgsea
+* MatrixEQTL (github version)
+* eQTLpipeline 
+
+```
+library(devtools)
+devtools::install_github("andreyshabalin/MatrixEQTL", force=T)
+devtools::install_github("matthiasheinig/eQTLpipeline", force=T)
+```
+
+We provide a conda environment running on fedora 25, as PEER frequently causes problems for installing as a R package. A docker will be supplied soon.   
 For installation, please
 * create a new conda environment, using the file `/envs/r341peer.yml`
 * install additional packages MatrixEQTL (please use the up-to-date github version, not the one on CRAN), eQTLpipeline from github,
@@ -38,7 +52,7 @@ devtools::install_github("matthiasheinig/eQTLpipeline", force=T)
 
 
 ## Tutorial
-A short example of how to run our pre-selection approach with a short example dataset can be found as a R-markdown document in `/example_data/`.
+A short example of how to run our pre-selection approach with a short example dataset can be found as a R-markdown [document](https://github.com/heiniglab/symatrial/blob/master/example_data/PRSenrichQTL_tutorial.Rmd).
 If you want to run the analysis, in general the following R packages are required:
 * [fgsea](https://bioconductor.org/packages/release/bioc/html/fgsea.html)
 * [MatrixEQTL](https://github.com/andreyshabalin/MatrixEQTL)
@@ -51,13 +65,13 @@ Please also download gene set annotations here:
 Cis QTL analyses were performed 
 
 You can find analysis code for the cis QTL analysis in the folder
-`/scripts/qtl_pipeline/`
+[qtl_pipeline](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline)
 
 containing numerous scripts for
 * preprocessing
 * running PEER and then QTL analysis
 * functional annotations
-* `/analysis/comparison/`comparisons to other datasets (e.g. GTEx)
+* [comparison](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/analysis/comparison/) comparisons to other datasets (e.g. GTEx)
 
 ### Functional annotations
 * `/functional_analysis/*` build snp-gene pair annotations
