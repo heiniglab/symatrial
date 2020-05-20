@@ -44,6 +44,8 @@ If you want to run the analysis, in general the following R packages are require
 * [MatrixEQTL](https://github.com/andreyshabalin/MatrixEQTL)
 * [eQTLpipeline](https://github.com/matthiasheinig/eQTLpipeline)
 
+Please also download gene set annotations here:
+[GO bp](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/7.1/c5.bp.v7.1.symbols.gmt)
 ## Cis QTL analysis
 
 Cis QTL analyses were performed 

@@ -34,11 +34,12 @@ iii) Establish the link between the core gene candidates and the disease based o
 ## Requirements
 
 This document requires the following packages:
+
 * [fgsea](https://bioconductor.org/packages/release/bioc/html/fgsea.html)
 * [MatrixEQTL](https://github.com/andreyshabalin/MatrixEQTL)
 * [eQTLpipeline](https://github.com/matthiasheinig/eQTLpipeline)
 
-```{r}
+```{r, message=FALSE}
 library(fgsea)
 library(MatrixEQTL)
 library(eQTLpipeline)
@@ -48,43 +49,105 @@ library(eQTLpipeline)
 ## Loading data
 
 In the following, we show the general procedure based on public data (272 individuals from the 1000 genomes LCL data).  
-We supply a small test dataset with pre-computed PRS values for AF and CAD as well as gene expression for 832 genes (`1k_genomes_PRS_expr.tsv`). Additionally, genotypes for 109 pruned AF SNPs for those individuals are supplied (`1k_genomes_AF_snps.txt`) in MatrixEQTL format.
+We supply a small test dataset with pre-computed PRS values for AF and CAD as well as gene expression for 830 genes (`1k_genomes_PRS_expr.tsv`). Additionally, genotypes for 109 pruned AF SNPs for those individuals are supplied (`1k_genomes_AF_snps.txt`) in MatrixEQTL format.
 
 ```{r}
 df <- read.csv(file = "1k_genomes_PRS_expr.tsv",
                sep = "\t", h = T, stringsAsFactors = F)
+print.data.frame(df[1:5, 1:10],
+                 row.names = F, digits = 3)
 ```
 
 ## eQTS ranking
 First step is to calculate the eQTS rankings:
 ```{r}
-eQTS <- data.frame(matrix(nrow = 832,
-                          ncol = 6),
+eQTS <- data.frame(matrix(nrow = 830, ncol = 5),
                    stringsAsFactors = F,
                    row.names = colnames(df)[-c(1:7)])
-colnames(eQTS) <- c("id", "Estimate", "StdError", "tvalue", "pvalueT", "padjT")
+colnames(eQTS) <- c("id", "Estimate", "StdError", "tvalue", "pvalueT")
 data <- df[, c("id", "PRS.AF", "PRS.AF.percentile",
                "PRS.CAD", "PRS.CAD.percentile",
                "sex", "population")]
 for (i in 8:(dim(df)[2])){
-    #i=1
+    #i=8
     id <- colnames(df)[i]
     data$expr <- df[, id]
-    data$res <- residuals.lm(lm(expr ~ sex + BMI + sysBP + CRP + NTproBNP + RIN,
-                              data = df))
     lmres <- lm(expr ~ sex + PRS.AF.percentile,
-                data = df)
+                data = data)
     eQTS[id, ] <- c(id,
                     summary(lmres)$coefficients["PRS.AF.percentile", ])
-    if(i %% 100 == 0) print(paste0("Gene ", i, " / ", dim(texpr)[1], " done"))
+    if(i %% 100 == 0) print(paste0("Gene ", i-7, " / ", dim(df)[2]-7, " done"))
 }
+eQTS[, -1] <- apply(eQTS[, -1], 2, as.numeric)
+eQTS <- eQTS[order(eQTS$pvalueT), ]
 
-
+print("Top five associated genes:")
+print.data.frame(eQTS[1:5, ],
+                 row.names = F, digits = 3)
 ```
 
+## Load pathway annotations
 
-
+Please download GO biological processes gene sets first, [GO bp .gmt file](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/7.1/c5.bp.v7.1.symbols.gmt),
+then import them into R using the fgsea package.
 ```{r}
-
+if(!file.exists("c5.bp.v7.1.symbols.gmt")){
+  print("Please download pathway annotations first to move on!")
+} else {
+  gmt <- gmtPathways("c5.bp.v7.1.symbols.gmt")
+}
 ```
+
+## Compute gene set enrichment analysis on eQTS ranking:
+```{r}
+if(file.exists("c5.bp.v7.1.symbols.gmt")){
+  rank <- eQTS[, "tvalue"]
+  names(rank) <- eQTS[, "id"]
+  fgsea.res <- fgsea(gmt,
+                     rank,
+                     nperm=10000,
+                     minSize = 5,
+                     maxSize=100)
+  fgsea.res <- fgsea.res[order(fgsea.res$pval), ]
+  
+  print("Top five pathways:")
+  head(fgsea.res[1:5, -8])
+}
+```
+
+## Extract the leadingEdge as candidate genes:
+
+```{r, fig.height=3}
+if(file.exists("c5.bp.v7.1.symbols.gmt")){
+  lead <- data.frame(table(unlist( fgsea.res[fgsea.res$pval<0.01, "leadingEdge"])))
+  hist(lead$Freq, breaks = 20,
+       main = "Distribution: Frequencies of genes in multiple leading edges:")
+  print("Let's select the top three candidates that appear more than 10 times:")
+  as.character(lead[lead$Freq>10, "Var1"])
+}
+```
+
+## Run trans eQTL analysis
+
+Let's run a trans eQTL analysis for those three genes and the 109 AF GWAS SNPs:
+
+```{r, message=FALSE}
+if(file.exists("c5.bp.v7.1.symbols.gmt")){
+  eQTL <- trans.core <- trans.qtl(prefix = "/tmp/example",
+                                  genotype_file_name = "1k_genomes_AF_snps.txt",
+                                  expression_file_name = t(df[, c("CD28", "IL10", "TNFSF4")]),
+                                  covariates_file_name = df$sex,
+                                  threshold = 1,
+                                  compute.all = T,
+                                  min.pv.by.genesnp = T,
+                                  save.memory = F,
+                                  load.qtls = T)
+  print("Top trans eQTLs:")
+  head(eQTL$all$eqtls[order(eQTL$all$eqtls$pvalue), ])
+}
+```
+
+
+
+
 
