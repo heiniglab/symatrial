@@ -23,43 +23,52 @@ iii) Establish the link between the core gene candidates and the disease based o
 
 # Run your own analysis
 
+Want to try our approach? Let's get started with a short [tutorial](https://colab.research.google.com/drive/1ZSQF1Lh86tVgIlfrK10EB3VUlNDoG9fs?usp=sharing) on google colab!
 
 ## Installation instructions
 Analysis was done using R 3.4.1.
 
 In general, four packages need to be installed
-* devtools
-* fgsea
-* MatrixEQTL (github version)
-* eQTLpipeline 
+* [devtools](https://cran.r-project.org/web/packages/devtools/index.html)
+* [fgsea](https://bioconductor.org/packages/release/bioc/html/fgsea.html)
+* [MatrixEQTL](https://github.com/andreyshabalin/MatrixEQTL)
+* [eQTLpipeline](https://github.com/matthiasheinig/eQTLpipeline) (optional)
 
 ```
+install.packages("devtools")
+BiocManager::install("fgsea", dependencies = T, clean = T)
 library(devtools)
 devtools::install_github("andreyshabalin/MatrixEQTL", force=T)
 devtools::install_github("matthiasheinig/eQTLpipeline", force=T)
 ```
 
-We provide a conda environment running on fedora 25, as PEER frequently causes problems for installing as a R package. A docker will be supplied soon.   
+Additional packages are required to run the cis QTL pipeline with PEER analysis. For this, we provide a conda environment running on fedora 25, as PEER frequently causes problems when being installed as a R package. A docker will be supplied soon.   
 For installation, please
-* create a new conda environment, using the file `/envs/r341peer.yml`
-* install additional packages MatrixEQTL (please use the up-to-date github version, not the one on CRAN), eQTLpipeline from github,
-i.e. in R run:
+* create a new [conda]() environment, using the [yml-file](https://raw.githubusercontent.com/heiniglab/symatrial/master/envs/r341peer.yml) `conda env create -f r341peer.yml`
+* activate the environment `conda activate r341peer`
+* start `R` and install packages MatrixEQTL and eQTLpipeline from github by running
 ```
 library(devtools)
 devtools::install_github("andreyshabalin/MatrixEQTL", force=T)
 devtools::install_github("matthiasheinig/eQTLpipeline", force=T)
 ```
+
 
 
 ## Tutorial
-A short example of how to run our pre-selection approach with a short example dataset can be found as a R-markdown [document](https://github.com/heiniglab/symatrial/blob/master/example_data/PRSenrichQTL_tutorial.Rmd).
+
+A short example of how to run our pre-selection approach with a short example dataset can be found as a R-markdown [R-markdown](https://github.com/heiniglab/symatrial/blob/master/example_data/PRSenrichQTL_tutorial.Rmd), [html document](https://github.com/heiniglab/symatrial/blob/master/example_data/PRSenrichQTL_tutorial.html) or as a google [colab notebook](https://colab.research.google.com/drive/1ZSQF1Lh86tVgIlfrK10EB3VUlNDoG9fs?usp=sharing).
+
 If you want to run the analysis, in general the following R packages are required:
+* [devtools](https://cran.r-project.org/web/packages/devtools/index.html)
 * [fgsea](https://bioconductor.org/packages/release/bioc/html/fgsea.html)
 * [MatrixEQTL](https://github.com/andreyshabalin/MatrixEQTL)
 * [eQTLpipeline](https://github.com/matthiasheinig/eQTLpipeline)
 
 Please also download gene set annotations here:
-[GO bp](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/7.1/c5.bp.v7.1.symbols.gmt)
+[GO biological processes](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/7.1/c5.bp.v7.1.symbols.gmt)
+
+
 ## Cis QTL analysis
 
 Cis QTL analyses were performed 
@@ -74,19 +83,19 @@ containing numerous scripts for
 * [comparison](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/analysis/comparison/) comparisons to other datasets (e.g. GTEx)
 
 ### Functional annotations
-* `/functional_analysis/*` build snp-gene pair annotations
-* `/functional_analysis/enrichment_analysis/*` functions to evaluate enrichment of functional elements
-* `/functional_analysis/eclip_preprocessing.R` derivation of RBP binding sites
-* `/analysis/TF_activity.Rmd` NKX2-5 binding sites and TF activity
+* [build snp-gene pair annotations](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/functional_analysis/)
+* [functions to evaluate enrichment of functional elements](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/functional_analysis/enrichment_analysis/) functions to evaluate enrichment of functional elements
+* [derivation of RBP binding sites](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/functional_analysis/eclip_preprocessing.R)
+* [NKX2-5 binding sites and TF activity](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/analysis/TF_activity.Rmd)
 
 ### GWAS annotations
-* `/analysis/gwas_imputed/script.R` calculate GWAS overlaps and enrichments
+* [calculate GWAS overlaps and enrichments](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/analysis/gwas_imputed/script.R)
 
 
 ## Trans analysis
 
 ### Genome-wide polygenic scores for AF and CAD
 
-Code for the computation of the polygenic risk score for AF on both our cohort and the 1000 genomes individuals can be found here: `/PRS_trans_analyses/polygenic_risk_scores.R`
+Code for the computation of the polygenic risk score for AF on both our cohort and the 1000 genomes individuals can be found  [here](https://github.com/heiniglab/symatrial/blob/master/scripts/PRS_trans_analyses/polygenic_risk_scores.R).
 
-The final list of 109 tested SNPs derived by pruning all SNPs annotated with AF in the GWAS catalog using  `/analysis/gwas_imputed/AF_snp_pruning.R` are supplied here `/example_data/AF_SNPs_pruned_hg19.txt`.
+The final list of 109 tested SNPs derived by [pruning](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/analysis/gwas_imputed/AF_snp_pruning.R) all SNPs annotated with AF in the GWAS catalog using are supplied [here](https://github.com/heiniglab/symatrial/blob/master/example_data/AF_SNPs_pruned_hg19.txt).

@@ -118,6 +118,11 @@ if(file.exists("c5.bp.v7.1.symbols.gmt")){
 
 ## Extract the leadingEdge as candidate genes:
 
+As this is only an example dataset for demonstration, we choose a significane threshold of P < 0.01. However, for a real analysis we would recommend a much more stringent cutoff based on the adjusted p-value (FDR).
+
+For each gene set, the leadingEdge contains the genes that possibly drive the enrichment. We therefore use those genes for significant pathways. To narrow it down further, we check if the same genes are contained in the leadingEdge of multiple pathways.  
+We take all genes, that appear more than 5 times (8 genes in total) as candidates for the trans eQTL analysis.
+
 ```{r, fig.height=3}
 if(file.exists("c5.bp.v7.1.symbols.gmt")){
   lead <- data.frame(table(unlist( fgsea.res[fgsea.res$pval<0.01, "leadingEdge"])))
@@ -131,7 +136,7 @@ if(file.exists("c5.bp.v7.1.symbols.gmt")){
 
 ## Run trans eQTL analysis
 
-Let's run a trans eQTL analysis for those three genes and the 109 AF GWAS SNPs:
+Let's run a trans eQTL analysis for those eight genes and the 109 AF GWAS SNPs:
 
 ```{r, message=FALSE}
 if(file.exists("c5.bp.v7.1.symbols.gmt")){

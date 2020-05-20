@@ -327,6 +327,9 @@ print(&quot;Top five associated genes:&quot;)</code></pre>
 </div>
 <div id="extract-the-leadingedge-as-candidate-genes" class="section level2">
 <h2>Extract the leadingEdge as candidate genes:</h2>
+<p>As this is only an example dataset for demonstration, we choose a significane threshold of P &lt; 0.01. However, for a real analysis we would recommend a much more stringent cutoff based on the adjusted p-value (FDR).</p>
+<p>For each gene set, the leadingEdge contains the genes that possibly drive the enrichment. We therefore use those genes for significant pathways. To narrow it down further, we check if the same genes are contained in the leadingEdge of multiple pathways.<br />
+We take all genes, that appear more than 5 times (8 genes in total) as candidates for the trans eQTL analysis.</p>
 <pre class="r"><code>if(file.exists(&quot;c5.bp.v7.1.symbols.gmt&quot;)){
   lead &lt;- data.frame(table(unlist( fgsea.res[fgsea.res$pval&lt;0.01, &quot;leadingEdge&quot;])))
   hist(lead$Freq, breaks = 20,
@@ -341,7 +344,7 @@ print(&quot;Top five associated genes:&quot;)</code></pre>
 </div>
 <div id="run-trans-eqtl-analysis" class="section level2">
 <h2>Run trans eQTL analysis</h2>
-<p>Let’s run a trans eQTL analysis for those three genes and the 109 AF GWAS SNPs:</p>
+<p>Let’s run a trans eQTL analysis for those eight genes and the 109 AF GWAS SNPs:</p>
 <pre class="r"><code>if(file.exists(&quot;c5.bp.v7.1.symbols.gmt&quot;)){
   eQTL &lt;- trans.qtl(prefix = &quot;/tmp/example&quot;,
                     genotype_file_name = &quot;1k_genomes_AF_snps.txt&quot;,
@@ -359,7 +362,7 @@ print(&quot;Top five associated genes:&quot;)</code></pre>
 ##  /tmp/example_gene.txt 
 ## Created covariate file for a single gene for 272 individuals at:
 ##  /tmp/example_covariate.txt 
-## Analysis of  872 QTLs done in:  0.034  seconds 
+## Analysis of  872 QTLs done in:  0.053  seconds 
 ## Detected eQTLs:  872 
 ## [1] &quot;Top trans eQTLs:&quot;</code></pre>
 <pre><code>##         snps gene statistic       pvalue       FDR       beta
