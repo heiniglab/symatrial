@@ -25,16 +25,19 @@ iii) Establish the link between the core gene candidates and the disease based o
 
 
 ## Installation instructions
-Analysis was done using R 3.4.1. We provide a conda environment for containing version specific packages.  
+Analysis was done using R 3.4.1. We provide a conda environment for version specific packages. A docker will be supplied soon.   
 For intallation, please
-* create a new conda environment, using the file `r341peer.yml`
-* install additional packages MatrixEQTL, eQTLpipeline from github
+* create a new conda environment, using the file `/envs/r341peer.yml`
+* install additional packages MatrixEQTL (please use the up-to-date github version, not the one on CRAN), eQTLpipeline from github,
+i.e. in R run:
 ```
 library(devtools)
 devtools::install_github("andreyshabalin/MatrixEQTL", force=T)
 devtools::install_github("matthiasheinig/eQTLpipeline", force=T)
 ```
 
+## Tutorial
+A short example of how to run our pre-selection approach with a short example dataset can be found as a R-markdown document in `/example_data/`.
 
 ## Cis QTL analysis
 
@@ -63,4 +66,4 @@ containing numerous scripts for
 
 Code for the computation of the polygenic risk score for AF on both our cohort and the 1000 genomes individuals can be found here: `/PRS_trans_analyses/polygenic_risk_scores.R`
 
-The final list of 109 tested SNPs Pruning for the SNPs annotated with AF in the GWAS catalog can be found here `/analysis/gwas_imputed/AF_snp_pruning.R`.
+The final list of 109 tested SNPs derived by pruning all SNPs annotated with AF in the GWAS catalog using  `/analysis/gwas_imputed/AF_snp_pruning.R` are supplied here `/example_data/AF_SNPs_pruned_hg19.tsv`.
