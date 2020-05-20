@@ -29,6 +29,12 @@ mygray <- "#C6DDEA"
 col.paired <- brewer.pal(n = 11, "Paired")
 col.set <- col.paired[c(2,8,9)]
 
+scores <- readRDS(paste0(get.path("dataset", local),
+                         "risk_score/GPS_scores_EUR_AFHRI-B.RDS"))
+scores$AF_Status <- factor(scores$AF_Status, levels = c(0,1,2), labels = c("ctrl", "preOP AF", "only postOP AF"))
+scores$fibro.score.imp.prot.meta <- NULL
+scores <- scores[!duplicated(scores), ]
+rownames(scores) <- scores$externID2
 
 # transcriptomics eQTS ---------------------------------------------------------
 res.GPS.trans.file <- paste0(get.path("dataset", local),
@@ -128,7 +134,6 @@ signif(top.table.trans[order(top.table.trans$tvalue, decreasing=T),
                        c("Estimate", "tvalue", "pvalueT")],
        digits = 3)
 
-
 # transcriptomics GSEA on eQTS -------------------------------------------------
 fgsea.trans.file <- paste0(get.path("dataset", local),
                            "risk_score/correlations/",
@@ -148,16 +153,7 @@ if(!file.exists(fgsea.trans.file)){
                                      minSize = 15,
                                      maxSize=500)
   fgsea.trans[["GObp_all"]] <- fgsea.trans[["GObp_all"]][order(fgsea.trans[["GObp_all"]]$pval), ]
-  
-  rank <- res.GPS.trans2[, "pvalueT"]
-  names(rank) <- res.GPS.trans2[, "id"]
-  fgsea.trans[["GObp_all_p"]] <- fgsea(gmt,
-                                       rank,
-                                       nperm=100000,
-                                       minSize = 15,
-                                       maxSize=500)
-  fgsea.trans[["GObp_all_p"]] <- fgsea.trans[["GObp_all_p"]][order(fgsea.trans[["GObp_all_p"]]$pval), ]
-  
+
   rank <- res.GPS.trans2[which(res.GPS.trans2$highly.expressed==1), "tvalue"]
   names(rank) <- res.GPS.trans2[which(res.GPS.trans2$highly.expressed==1), "id"]
   fgsea.trans[["GObp_high"]] <- fgsea(gmt,
@@ -167,61 +163,14 @@ if(!file.exists(fgsea.trans.file)){
                                       maxSize=500)
   fgsea.trans[["GObp_high"]] <- fgsea.trans[["GObp_high"]][order(fgsea.trans[["GObp_high"]]$pval), ]
   
-  rank <- res.GPS.trans2[which(res.GPS.trans2$highly.expressed==1), "pvalueT"]
-  names(rank) <- res.GPS.trans2[which(res.GPS.trans2$highly.expressed==1), "id"]
-  fgsea.trans[["GObp_high_p"]] <- fgsea(gmt,
-                                        rank,
-                                        nperm=100000,
-                                        minSize = 15,
-                                        maxSize=500)
-  fgsea.trans[["GObp_high_p"]] <- fgsea.trans[["GObp_high_p"]][order(fgsea.trans[["GObp_high_p"]]$pval), ]
-  
-  ## KEGG
-  gmt <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c2.cp.kegg.v6.1.symbols.gmt.txt")
-  
-  rank <- res.GPS.trans2[, "tvalue"]
-  names(rank) <- res.GPS.trans2[, "id"]
-  fgsea.trans[["KEGG_all"]] <- fgsea(gmt,
-                                     rank,
-                                     nperm=100000,
-                                     minSize = 15,
-                                     maxSize=500)
-  fgsea.trans[["KEGG_all"]] <- fgsea.trans[["KEGG_all"]][order(fgsea.trans[["KEGG_all"]]$pval), ]
-  
-  rank <- res.GPS.trans2[, "pvalueT"]
-  names(rank) <- res.GPS.trans2[, "id"]
-  fgsea.trans[["KEGG_all_p"]] <- fgsea(gmt,
-                                       rank,
-                                       nperm=100000,
-                                       minSize = 15,
-                                       maxSize=500)
-  fgsea.trans[["KEGG_all_p"]] <- fgsea.trans[["KEGG_all_p"]][order(fgsea.trans[["KEGG_all_p"]]$pval), ]
-  
-  rank <- res.GPS.trans2[which(res.GPS.trans2$highly.expressed==1), "tvalue"]
-  names(rank) <- res.GPS.trans2[which(res.GPS.trans2$highly.expressed==1), "id"]
-  fgsea.trans[["KEGG_high"]] <- fgsea(gmt,
-                                      rank,
-                                      nperm=100000,
-                                      minSize = 15,
-                                      maxSize=500)
-  fgsea.trans[["KEGG_high"]] <- fgsea.trans[["KEGG_high"]][order(fgsea.trans[["KEGG_high"]]$pval), ]
-  
-  rank <- res.GPS.trans2[which(res.GPS.trans2$highly.expressed==1), "pvalueT"]
-  names(rank) <- res.GPS.trans2[which(res.GPS.trans2$highly.expressed==1), "id"]
-  fgsea.trans[["KEGG_high_p"]] <- fgsea(gmt,
-                                        rank,
-                                        nperm=100000,
-                                        minSize = 15,
-                                        maxSize=500)
-  fgsea.trans[["KEGG_high_p"]] <- fgsea.trans[["KEGG_high_p"]][order(fgsea.trans[["KEGG_high_p"]]$pval), ]
-  
   saveRDS(fgsea.trans, file = fgsea.trans.file)
 } else {
   fgsea.trans <- readRDS(fgsea.trans.file)
 }
 
-
-
+df1 <- fgsea.trans[["GObp_high"]]
+df2 <- df1[df1$padj<0.05, ]
+df3 <- data.frame(table(unlist(df2$leadingEdge)))
 
 # Proteomics pQTS --------------------------------------------------------------
 res.GPS.prot.file <- paste0(get.path("dataset", local),
@@ -291,7 +240,6 @@ signif(top.table.prot[, c("Estimate", "tvalue", "pvalueT", "padjT", "padjT.highl
        digits = 3)
 
 
-
 # Proteomics GSEA pQTS ---------------------------------------------------------
 fgsea.prot.file <- paste0(get.path("dataset", local),
                           "risk_score/correlations/",
@@ -312,37 +260,11 @@ if(!file.exists(fgsea.prot.file)){
                                     maxSize=500)
   fgsea.prot[["GObp_all"]] <- fgsea.prot[["GObp_all"]][order(fgsea.prot[["GObp_all"]]$pval), ]
   
-  rank <- res.GPS.prot2[, "pvalueT"]
-  names(rank) <- res.GPS.prot2[, "id"]
-  fgsea.prot[["GObp_all_p"]] <- fgsea(gmt,
-                                      rank,
-                                      nperm=100000,
-                                      minSize = 5,
-                                      maxSize=500)
-  fgsea.prot[["GObp_all_p"]] <- fgsea.prot[["GObp_all_p"]][order(fgsea.prot[["GObp_all_p"]]$pval), ]
-  
-  ## KEGG
-  gmt <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c2.cp.kegg.v6.1.symbols.gmt.txt")
-  
-  rank <- res.GPS.prot2[, "tvalue"]
-  names(rank) <- res.GPS.prot2[, "id"]
-  fgsea.prot[["KEGG_all"]] <- fgsea(gmt,
-                                    rank,
-                                    nperm=100000,
-                                    minSize = 5,
-                                    maxSize=500)
-  fgsea.prot[["KEGG_all"]] <- fgsea.prot[["KEGG_all"]][order(fgsea.prot[["KEGG_all"]]$pval), ]
-  
-  rank <- res.GPS.prot2[, "pvalueT"]
-  names(rank) <- res.GPS.prot2[, "id"]
-  fgsea.prot[["KEGG_all_p"]] <- fgsea(gmt,
-                                      rank,
-                                      nperm=100000,
-                                      minSize = 5,
-                                      maxSize=500)
-  fgsea.prot[["KEGG_all_p"]] <- fgsea.prot[["KEGG_all_p"]][order(fgsea.prot[["KEGG_all_p"]]$pval), ]
-  
   saveRDS(fgsea.prot, file = fgsea.prot.file)
 } else {
   fgsea.prot <- readRDS(fgsea.prot.file)
 }
+
+dfp1 <- fgsea.prot[["GObp_all"]] 
+dfp2 <- dfp1[dfp1$padj<0.05, ]
+dfp3 <- data.frame(table(unlist(dfp2$leadingEdge)))

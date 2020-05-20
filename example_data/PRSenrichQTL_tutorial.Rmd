@@ -58,26 +58,27 @@ df <- read.csv(file = "1k_genomes_PRS_expr.tsv",
 ## eQTS ranking
 First step is to calculate the eQTS rankings:
 ```{r}
-# eQTS <- data.frame(matrix(nrow = dim(texpr)[1],
-#                           ncol = 6),
-#                    stringsAsFactors = F,
-#                               row.names = colnames())
-#   colnames(res.GPS.trans) <- c("id", "Estimate", "StdError", "tvalue", "pvalueT", "padjT")
-# data <- df[, c("id", "PRS.AF", "PRS.AF.percentile", "PRS.CAD", "PRS.CAD.percentile", "sex", "population")]
-# for (i in 8:(dim(df)[2])){
-#     #i=1
-#     id <- colnames(df)[i]
-#     data$expr <- df[, id]
-#     data$res <- residuals.lm(lm(expr ~ sex + BMI + sysBP + CRP + NTproBNP + RIN,
-#                               data = df))
-#     lmres <- lm(expr ~ sex + PRS.AF.percentile,
-#                 data = df)
-#     res.GPS.trans[id, ] <- c(id,
-#                              summary(lmres)$coefficients["PRS.AF.percentile", ],
-#                              NA,
-#                              NA, NA, NA, NA, NA, NA,
-#                              NA)
-#     if(i %% 1000 == 0) print(paste0("Gene ", i, " / ", dim(texpr)[1], " done"))
+eQTS <- data.frame(matrix(nrow = 832,
+                          ncol = 6),
+                   stringsAsFactors = F,
+                   row.names = colnames(df)[-c(1:7)])
+colnames(eQTS) <- c("id", "Estimate", "StdError", "tvalue", "pvalueT", "padjT")
+data <- df[, c("id", "PRS.AF", "PRS.AF.percentile",
+               "PRS.CAD", "PRS.CAD.percentile",
+               "sex", "population")]
+for (i in 8:(dim(df)[2])){
+    #i=1
+    id <- colnames(df)[i]
+    data$expr <- df[, id]
+    data$res <- residuals.lm(lm(expr ~ sex + BMI + sysBP + CRP + NTproBNP + RIN,
+                              data = df))
+    lmres <- lm(expr ~ sex + PRS.AF.percentile,
+                data = df)
+    eQTS[id, ] <- c(id,
+                    summary(lmres)$coefficients["PRS.AF.percentile", ])
+    if(i %% 100 == 0) print(paste0("Gene ", i, " / ", dim(texpr)[1], " done"))
+}
+
 
 ```
 
