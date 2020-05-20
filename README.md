@@ -23,7 +23,7 @@ iii) Establish the link between the core gene candidates and the disease based o
 
 # Run your own analysis
 
-Want to try our approach? Let's get started with a short [tutorial](https://colab.research.google.com/drive/1ZSQF1Lh86tVgIlfrK10EB3VUlNDoG9fs?usp=sharing) on google colab!
+Want to try our approach? Let's get started with a short [tutorial](https://colab.research.google.com/drive/1ZSQF1Lh86tVgIlfrK10EB3VUlNDoG9fs?usp=sharing) on google colab (15min installation and <5min runtime)!
 
 ## Installation instructions
 Analysis was done using R 3.4.1.
