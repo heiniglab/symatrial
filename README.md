@@ -25,8 +25,8 @@ iii) Establish the link between the core gene candidates and the disease based o
 
 
 ## Installation instructions
-Analysis was done using R 3.4.1. We provide a conda environment for version specific packages. A docker will be supplied soon.   
-For intallation, please
+Analysis was done using R 3.4.1. We provide a conda environment for version specific packages (explicitely including PEER and MatrixEQTL). A docker will be supplied soon.   
+For installation, please
 * create a new conda environment, using the file `/envs/r341peer.yml`
 * install additional packages MatrixEQTL (please use the up-to-date github version, not the one on CRAN), eQTLpipeline from github,
 i.e. in R run:
@@ -36,8 +36,13 @@ devtools::install_github("andreyshabalin/MatrixEQTL", force=T)
 devtools::install_github("matthiasheinig/eQTLpipeline", force=T)
 ```
 
+
 ## Tutorial
 A short example of how to run our pre-selection approach with a short example dataset can be found as a R-markdown document in `/example_data/`.
+If you want to run the analysis, in general the following R packages are required:
+* [fgsea](https://bioconductor.org/packages/release/bioc/html/fgsea.html)
+* [MatrixEQTL](https://github.com/andreyshabalin/MatrixEQTL)
+* [eQTLpipeline](https://github.com/matthiasheinig/eQTLpipeline)
 
 ## Cis QTL analysis
 

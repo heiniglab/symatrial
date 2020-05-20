@@ -31,6 +31,22 @@ iii) Establish the link between the core gene candidates and the disease based o
 
 # Example
 
+## Requirements
+
+This document requires the following packages:
+* [fgsea](https://bioconductor.org/packages/release/bioc/html/fgsea.html)
+* [MatrixEQTL](https://github.com/andreyshabalin/MatrixEQTL)
+* [eQTLpipeline](https://github.com/matthiasheinig/eQTLpipeline)
+
+```{r}
+library(fgsea)
+library(MatrixEQTL)
+library(eQTLpipeline)
+```
+
+
+## Loading data
+
 In the following, we show the general procedure based on public data (272 individuals from the 1000 genomes LCL data).  
 We supply a small test dataset with pre-computed PRS values for AF and CAD as well as gene expression for 832 genes (`1k_genomes_PRS_expr.tsv`). Additionally, genotypes for 109 pruned AF SNPs for those individuals are supplied (`1k_genomes_AF_snps.txt`) in MatrixEQTL format.
 
@@ -39,10 +55,29 @@ df <- read.csv(file = "1k_genomes_PRS_expr.tsv",
                sep = "\t", h = T, stringsAsFactors = F)
 ```
 
-
+## eQTS ranking
 First step is to calculate the eQTS rankings:
 ```{r}
-
+# eQTS <- data.frame(matrix(nrow = dim(texpr)[1],
+#                           ncol = 6),
+#                    stringsAsFactors = F,
+#                               row.names = colnames())
+#   colnames(res.GPS.trans) <- c("id", "Estimate", "StdError", "tvalue", "pvalueT", "padjT")
+# data <- df[, c("id", "PRS.AF", "PRS.AF.percentile", "PRS.CAD", "PRS.CAD.percentile", "sex", "population")]
+# for (i in 8:(dim(df)[2])){
+#     #i=1
+#     id <- colnames(df)[i]
+#     data$expr <- df[, id]
+#     data$res <- residuals.lm(lm(expr ~ sex + BMI + sysBP + CRP + NTproBNP + RIN,
+#                               data = df))
+#     lmres <- lm(expr ~ sex + PRS.AF.percentile,
+#                 data = df)
+#     res.GPS.trans[id, ] <- c(id,
+#                              summary(lmres)$coefficients["PRS.AF.percentile", ],
+#                              NA,
+#                              NA, NA, NA, NA, NA, NA,
+#                              NA)
+#     if(i %% 1000 == 0) print(paste0("Gene ", i, " / ", dim(texpr)[1], " done"))
 
 ```
 
