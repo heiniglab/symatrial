@@ -41,6 +41,8 @@ A short example of how to run our pre-selection approach with a short example da
 
 ## Cis QTL analysis
 
+Cis QTL analyses were performed 
+
 You can find analysis code for the cis QTL analysis in the folder
 `/scripts/qtl_pipeline/`
 
@@ -66,4 +68,4 @@ containing numerous scripts for
 
 Code for the computation of the polygenic risk score for AF on both our cohort and the 1000 genomes individuals can be found here: `/PRS_trans_analyses/polygenic_risk_scores.R`
 
-The final list of 109 tested SNPs derived by pruning all SNPs annotated with AF in the GWAS catalog using  `/analysis/gwas_imputed/AF_snp_pruning.R` are supplied here `/example_data/AF_SNPs_pruned_hg19.tsv`.
+The final list of 109 tested SNPs derived by pruning all SNPs annotated with AF in the GWAS catalog using  `/analysis/gwas_imputed/AF_snp_pruning.R` are supplied here `/example_data/AF_SNPs_pruned_hg19.txt`.

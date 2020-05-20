@@ -21,9 +21,6 @@ https://doi.org/10.1101/2020.04.06.021527
 
 We address a key hypothesis about the existence of core genes as postulated in the omnigenic model by [Liu et al.](https://doi.org/10.1016/j.cell.2019.04.014), *Cell* (2019). Core genes are central genes with trans-associations to GWAS loci, whose expression levels directly affect a disease phenotype. Here we sought to identify candidate core genes for AF to understand the contribution of trans-genetic effects in the pathology of AF. To prioritize genes satisfying the properties predicted by the omnigenic model, we evaluated the accumulation of trans-effects, their relevance in gene regulatory networks, and the disease association by the following strategy:
 
-![](core_gene_model_schema.png)
-(Overview figure of our approach)
-
 
 i) Evaluate cumulated trans-effects of disease-associated variants on expression by ranking genes based on their correlation of mRNA and protein abundance with a PRS (eQTS) as proposed by [Võsa et al.](https://doi.org/10.1101/447367), *bioRxiv* (2018)
 
@@ -34,40 +31,12 @@ iii) Establish the link between the core gene candidates and the disease based o
 
 # Example
 
-In the following, we show the general procedure based on public data (1000 genomes LCL data).  
-We supply a small test dataset with pre-computed PRS values. Additionally, we need to get expression data.
+In the following, we show the general procedure based on public data (272 individuals from the 1000 genomes LCL data).  
+We supply a small test dataset with pre-computed PRS values for AF and CAD as well as gene expression for 832 genes (`1k_genomes_PRS_expr.tsv`). Additionally, genotypes for 109 pruned AF SNPs for those individuals are supplied (`1k_genomes_AF_snps.txt`) in MatrixEQTL format.
+
 ```{r}
-if (!file.exists("E-GEUV-1_expression.RDS")) {
-  efile <- "E-GEUV-1_tpms.tsv"
-  if (!file.exists(efile)) {
-    download.file(
-      paste0("https://www.ebi.ac.uk/gxa/experiments-content/E-GEUV-1/resources/ExperimentDownloadSupplier.RnaSeqBaseline/tpms.tsv"),
-      dest=efile
-      )
-  }
-  expr <- read.csv(efile, sep = "\t", skip = 4, stringsAsFactors = F)
-  colnames(expr) <- gsub("^[^_]*\\.\\.", "", colnames(expr))
-  expr <- expr[!duplicated(expr$Gene.Name), ]
-  rownames(expr) <- expr$Gene.Name
-  expr[, c("Gene.ID", "Gene.Name")] <- NULL
-  
-  prs <- read.csv(file="1kPhase3_PRS.txt",
-                  sep = "\t", h = T, stringsAsFactors = F)
-  rownames(prs) <- prs$id
-  expr <- data.frame(t(expr[, which(colnames(expr) %in% prs$id)]),
-                     stringsAsFactors = F)
-  expr <- expr[, which(colSums(is.na(expr))==0)]
-  expr <- log(expr+1)
-  med <- apply(expr, 2, median)
-  expr <- expr[, names(med[which(log(med+1)>1)])]
-  test <- apply(expr, 2, var)
-  expr <- expr[, which(test>0.2)]
-  expr <- expr[, which(apply(expr, 2, var)<1)]
-  saveRDS(expr, file = "E-GEUV-1_expression.RDS")
-  unlink(efile)
-} else {
-  expr <- readRDS("E-GEUV-1_expression.RDS")
-}
+df <- read.csv(file = "1k_genomes_PRS_expr.tsv",
+               sep = "\t", h = T, stringsAsFactors = F)
 ```
 
 
