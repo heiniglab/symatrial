@@ -5,14 +5,12 @@ Ines Assum & Julia Krause et al., Tissue-specific multiOMICs analysis of atrial 
 here:
 https://doi.org/10.1101/2020.04.06.021527
 
+**Abstract:**  
 Genome-wide association studies (GWAS) for atrial fibrillation (AF) have uncovered numerous disease-associated variants. Their underlying molecular mechanisms, especially consequences for mRNA and protein expression remain largely elusive. Thus, novel multiOMICs approaches are needed for deciphering the underlying molecular networks. Here, we integrated genomics, transcriptomics, and proteomics of human atrial tissue which allowed for identifying widespread effects of genetic variants on both transcript (cis eQTL) and protein (cis pQTL) abundance. We further established a novel targeted trans QTL approach based on polygenic risk scores to identify candidates for AF core genes. Using this approach, we identified two trans eQTLs and four trans pQTLs for AF GWAS hits, and elucidated the role of the transcription factor NKX2-5 as a link between the GWAS SNP rs9481842 and AF. Altogether, we present an integrative multiOMICs method to uncover trans-acting networks in small datasets and provide a rich resource of atrial tissue-specific regulatory variants for transcript and protein levels for cardiovascular disease gene prioritization.
 
 
 
 We address a key hypothesis about the existence of core genes as postulated in the omnigenic model by [Liu et al.](https://doi.org/10.1016/j.cell.2019.04.014), *Cell* (2019). Core genes are central genes with trans-associations to GWAS loci, whose expression levels directly affect a disease phenotype. Here we sought to identify candidate core genes for AF to understand the contribution of trans-genetic effects in the pathology of AF. To prioritize genes satisfying the properties predicted by the omnigenic model, we evaluated the accumulation of trans-effects, their relevance in gene regulatory networks, and the disease association by the following strategy:
-
-![](/example_data/core_gene_model_schema.png)
-(Overview figure of our approach)
 
 
 i) Evaluate cumulated trans-effects of disease-associated variants on expression by ranking genes based on their correlation of mRNA and protein abundance with a PRS (eQTS) as proposed by [Võsa et al.](https://doi.org/10.1101/447367), *bioRxiv* (2018)
