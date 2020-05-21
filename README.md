@@ -57,7 +57,7 @@ devtools::install_github("matthiasheinig/eQTLpipeline", force=T)
 
 ## Tutorial
 
-A short example of how to run our pre-selection approach with a short example dataset can be found as a R-markdown [R-markdown](https://github.com/heiniglab/symatrial/blob/master/example_data/PRSenrichQTL_tutorial.Rmd), [html document](https://github.com/heiniglab/symatrial/blob/master/example_data/PRSenrichQTL_tutorial.html) or as a google [colab notebook](https://colab.research.google.com/drive/1ZSQF1Lh86tVgIlfrK10EB3VUlNDoG9fs?usp=sharing).
+A short example of how to run our pre-selection approach with a short example dataset can be found as a [R markdown](https://github.com/heiniglab/symatrial/blob/master/example_data/PRSenrichQTL_tutorial.Rmd), [html document](https://github.com/heiniglab/symatrial/blob/master/example_data/PRSenrichQTL_tutorial.html) or as a google [colab notebook](https://colab.research.google.com/drive/1ZSQF1Lh86tVgIlfrK10EB3VUlNDoG9fs?usp=sharing).
 
 If you want to run the analysis, in general the following R packages are required:
 * [devtools](https://cran.r-project.org/web/packages/devtools/index.html)
