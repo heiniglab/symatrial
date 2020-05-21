@@ -99,3 +99,7 @@ containing numerous scripts for
 Code for the computation of the polygenic risk score for AF on both our cohort and the 1000 genomes individuals can be found  [here](https://github.com/heiniglab/symatrial/blob/master/scripts/PRS_trans_analyses/polygenic_risk_scores.R).
 
 The final list of 109 tested SNPs derived by [pruning](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/analysis/gwas_imputed/AF_snp_pruning.R) all SNPs annotated with AF in the GWAS catalog are supplied [here](https://github.com/heiniglab/symatrial/blob/master/example_data/AF_SNPs_pruned_hg19.txt).
+
+GSEA is performed on [eQTS/pQTS rankings](https://github.com/heiniglab/symatrial/tree/master/scripts/PRS_trans_analyses/QTS_enrich.R) and [trans QTL analysis](https://github.com/heiniglab/symatrial/tree/master/scripts/PRS_trans_analyses/transQTLs.R) is carried out for the pruned AF SNPs with a subset of genes.
+
+A [power analysis](https://github.com/heiniglab/symatrial/tree/master/scripts/PRS_trans_analyses/eqtl_power_calc_final.pdf) was used to estimate the number of genes to consider in our analysis.
