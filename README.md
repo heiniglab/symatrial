@@ -84,7 +84,7 @@ containing numerous scripts for
 
 ### Functional annotations
 * [build snp-gene pair annotations](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/functional_analysis/)
-* [functions to evaluate enrichment of functional elements](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/functional_analysis/enrichment_analysis/) functions to evaluate enrichment of functional elements
+* [functions to evaluate enrichment of functional elements](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/functional_analysis/enrichment_analysis/)
 * [derivation of RBP binding sites](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/functional_analysis/eclip_preprocessing.R)
 * [NKX2-5 binding sites and TF activity](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/analysis/TF_activity.Rmd)
 
@@ -98,4 +98,4 @@ containing numerous scripts for
 
 Code for the computation of the polygenic risk score for AF on both our cohort and the 1000 genomes individuals can be found  [here](https://github.com/heiniglab/symatrial/blob/master/scripts/PRS_trans_analyses/polygenic_risk_scores.R).
 
-The final list of 109 tested SNPs derived by [pruning](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/analysis/gwas_imputed/AF_snp_pruning.R) all SNPs annotated with AF in the GWAS catalog using are supplied [here](https://github.com/heiniglab/symatrial/blob/master/example_data/AF_SNPs_pruned_hg19.txt).
+The final list of 109 tested SNPs derived by [pruning](https://github.com/heiniglab/symatrial/blob/master/scripts/qtl_pipeline/analysis/gwas_imputed/AF_snp_pruning.R) all SNPs annotated with AF in the GWAS catalog are supplied [here](https://github.com/heiniglab/symatrial/blob/master/example_data/AF_SNPs_pruned_hg19.txt).
