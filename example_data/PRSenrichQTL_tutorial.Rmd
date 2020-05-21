@@ -39,6 +39,35 @@ This document requires the following packages:
 * [MatrixEQTL](https://github.com/andreyshabalin/MatrixEQTL)
 * [eQTLpipeline](https://github.com/matthiasheinig/eQTLpipeline)
 
+```{r, echo=F}
+packages <- c("devtools", "fgsea", "MatrixEQTL", "eQTLpipeline")
+packages <- packages[!(packages %in% rownames(installed.packages()))]
+if(length(packages)>0){
+  print("There are additional packages that need to be installed to follow this tutorial. You can change the `eval` option in the next code chunk from `F` to `T` to install the missing packages")
+}
+```
+
+
+```{r, eval=F, echo=F}
+if("devtools" %in% packages){
+  install.packages("devtools", dependencies = T, clean = T)
+}
+if("fgsea" %in% packages){
+  BiocManager::install("fgsea", dependencies = T, clean = T)
+}
+if("MatrixEQTL" %in% packages){
+  library(devtools)
+  devtools::install_github("andreyshabalin/MatrixEQTL", force=T)
+}
+if("eQTLpipeline" %in% packages){
+  library(devtools)
+  devtools::install_github("matthiasheinig/eQTLpipeline", force=T)
+}
+library(fgsea)
+library(MatrixEQTL)
+library(eQTLpipeline)
+```
+
 ```{r, message=FALSE}
 library(fgsea)
 library(MatrixEQTL)
@@ -52,7 +81,7 @@ In the following, we show the general procedure based on public data (272 indivi
 We supply a small test dataset with pre-computed PRS values for AF and CAD as well as gene expression for 830 genes (`1k_genomes_PRS_expr.tsv`). Additionally, genotypes for 109 pruned AF SNPs for those individuals are supplied (`1k_genomes_AF_snps.txt`) in MatrixEQTL format.
 
 ```{r}
-df <- read.csv(file = "1k_genomes_PRS_expr.tsv",
+df <- read.csv(file = "https://github.com/heiniglab/symatrial/raw/master/example_data/1k_genomes_PRS_expr.tsv",
                sep = "\t", h = T, stringsAsFactors = F)
 print.data.frame(df[1:5, 1:10],
                  row.names = F, digits = 3)
@@ -100,7 +129,8 @@ if(!file.exists("c5.bp.v7.1.symbols.gmt")){
 
 ## Compute gene set enrichment analysis on eQTS ranking:
 ```{r}
-if(file.exists("c5.bp.v7.1.symbols.gmt")){
+fgsea.res <- NULL
+try({
   set.seed(1234)
   rank <- eQTS[, "tvalue"]
   names(rank) <- eQTS[, "id"]
@@ -110,10 +140,15 @@ if(file.exists("c5.bp.v7.1.symbols.gmt")){
                      minSize = 5,
                      maxSize=100)
   fgsea.res <- fgsea.res[order(fgsea.res$pval), ]
+})
   
-  print("Top five pathways:")
-  head(fgsea.res[1:5, -8])
+if(is.null(fgsea.res)){
+  print("fgsea is not installed or pathway annotations are missing. Let's load the results:")
+  fgsea.res <- readRDS("https://github.com/heiniglab/symatrial/raw/master/example_data/1k_genomes_fgsea_eQTS.RDS")
 }
+
+print("Top five pathways:")
+head(fgsea.res[1:5, -8])
 ```
 
 ## Extract the leadingEdge as candidate genes:
@@ -124,14 +159,12 @@ For each gene set, the leadingEdge contains the genes that possibly drive the en
 We take all genes, that appear more than 5 times (8 genes in total) as candidates for the trans eQTL analysis.
 
 ```{r, fig.height=3}
-if(file.exists("c5.bp.v7.1.symbols.gmt")){
-  lead <- data.frame(table(unlist( fgsea.res[fgsea.res$pval<0.01, "leadingEdge"])))
-  hist(lead$Freq, breaks = 20,
-       main = "Distribution: Frequencies of genes in multiple leading edges:")
-  print("Let's select the top candidates that appear more than 5 times:")
-  candidates <- as.character(lead[lead$Freq>5, "Var1"])
-  print(candidates)
-}
+lead <- data.frame(table(unlist( fgsea.res[fgsea.res$pval<0.01, "leadingEdge"])))
+hist(lead$Freq, breaks = 20,
+     main = "Distribution: Frequencies of genes in multiple leading edges:")
+print("Let's select the top candidates that appear more than 5 times:")
+candidates <- as.character(lead[lead$Freq>5, "Var1"])
+print(candidates)
 ```
 
 ## Run trans eQTL analysis
@@ -139,9 +172,10 @@ if(file.exists("c5.bp.v7.1.symbols.gmt")){
 Let's run a trans eQTL analysis for those eight genes and the 109 AF GWAS SNPs:
 
 ```{r, message=FALSE}
-if(file.exists("c5.bp.v7.1.symbols.gmt")){
+eQTL <- NULL
+try({
   eQTL <- trans.qtl(prefix = "/tmp/example",
-                    genotype_file_name = "1k_genomes_AF_snps.txt",
+                    genotype_file_name = "https://github.com/heiniglab/symatrial/raw/master/example_data/1k_genomes_AF_snps.txt",
                     expression_file_name = t(df[, candidates]),
                     covariates_file_name = df$sex,
                     threshold = 1,
@@ -149,9 +183,13 @@ if(file.exists("c5.bp.v7.1.symbols.gmt")){
                     min.pv.by.genesnp = T,
                     save.memory = F,
                     load.qtls = T)
-  print("Top trans eQTLs:")
-  head(eQTL$all$eqtls[order(eQTL$all$eqtls$pvalue), ])
+})
+if(is.null(eQTL)){
+  print("Something went wrong when running MatrixEQTL. Let's load the results.")
+  eQTL <- readRDS("https://github.com/heiniglab/symatrial/raw/master/example_data/1k_genomes_trans_eQTLs.RDS")
 }
+print("Top trans eQTLs:")
+head(eQTL$all$eqtls[order(eQTL$all$eqtls$pvalue), ])
 ```
 
 
