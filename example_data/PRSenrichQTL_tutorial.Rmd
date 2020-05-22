@@ -40,10 +40,10 @@ This document requires the following packages:
 * [eQTLpipeline](https://github.com/matthiasheinig/eQTLpipeline)
 
 ```{r, echo=F}
-packages <- c("devtools", "fgsea", "MatrixEQTL", "eQTLpipeline")
-packages <- packages[!(packages %in% rownames(installed.packages()))]
-if(length(packages)>0){
-  print("There are additional packages that need to be installed to follow this tutorial. You can change the `eval` option in the next code chunk from `F` to `T` to install the missing packages")
+miss.packages <- c("devtools", "fgsea", "MatrixEQTL", "eQTLpipeline")
+miss.packages <- miss.packages[!(miss.packages %in% rownames(installed.packages()))]
+if(length(miss.packages)>0){
+  print("There are additional packages that need to be installed to actually run this tutorial yourself. You can change the `eval` option in the next code chunk from `F` to `T` to install the missing packages")
 }
 ```
 
@@ -68,10 +68,17 @@ library(MatrixEQTL)
 library(eQTLpipeline)
 ```
 
-```{r, message=FALSE}
+```{r, eval=F}
 library(fgsea)
 library(MatrixEQTL)
 library(eQTLpipeline)
+```
+```{r, message=FALSE, echo=F}
+try({
+  library(fgsea)
+  library(MatrixEQTL)
+  library(eQTLpipeline)
+})
 ```
 
 
@@ -98,7 +105,6 @@ data <- df[, c("id", "PRS.AF", "PRS.AF.percentile",
                "PRS.CAD", "PRS.CAD.percentile",
                "sex", "population")]
 for (i in 8:(dim(df)[2])){
-    #i=8
     id <- colnames(df)[i]
     data$expr <- df[, id]
     lmres <- lm(expr ~ sex + PRS.AF.percentile,
@@ -109,8 +115,10 @@ for (i in 8:(dim(df)[2])){
 }
 eQTS[, -1] <- apply(eQTS[, -1], 2, as.numeric)
 eQTS <- eQTS[order(eQTS$pvalueT), ]
+```
 
-print("Top five associated genes:")
+Top five associated genes:
+```{r}
 print.data.frame(eQTS[1:5, ],
                  row.names = F, digits = 3)
 ```
@@ -124,14 +132,26 @@ if(!file.exists("c5.bp.v7.1.symbols.gmt")){
   print("Please download pathway annotations first to move on!")
 } else {
   gmt <- gmtPathways("c5.bp.v7.1.symbols.gmt")
+  head(gmt, 2)
 }
 ```
 
 ## Compute gene set enrichment analysis on eQTS ranking:
-```{r}
+```{r, echo=T, eval=F}
+set.seed(1111)
+rank <- eQTS[, "tvalue"]
+names(rank) <- eQTS[, "id"]
+fgsea.res <- fgsea(gmt,
+                   rank,
+                   nperm=10000,
+                   minSize = 5,
+                   maxSize=100)
+fgsea.res <- fgsea.res[order(fgsea.res$pval), ]
+```
+```{r, echo=F}
 fgsea.res <- NULL
 try({
-  set.seed(1234)
+  set.seed(1111)
   rank <- eQTS[, "tvalue"]
   names(rank) <- eQTS[, "id"]
   fgsea.res <- fgsea(gmt,
@@ -146,8 +166,10 @@ if(is.null(fgsea.res)){
   print("fgsea is not installed or pathway annotations are missing. Let's load the results:")
   fgsea.res <- readRDS("https://github.com/heiniglab/symatrial/raw/master/example_data/1k_genomes_fgsea_eQTS.RDS")
 }
+```
 
-print("Top five pathways:")
+Top five pathways:
+```{r}
 head(fgsea.res[1:5, -8])
 ```
 
@@ -160,9 +182,12 @@ We take all genes, that appear more than 5 times (8 genes in total) as candidate
 
 ```{r, fig.height=3}
 lead <- data.frame(table(unlist( fgsea.res[fgsea.res$pval<0.01, "leadingEdge"])))
-hist(lead$Freq, breaks = 20,
+hist(lead$Freq, breaks = 10,
      main = "Distribution: Frequencies of genes in multiple leading edges:")
-print("Let's select the top candidates that appear more than 5 times:")
+```
+
+Let's select the top candidates that appear more than 5 times:
+```{r}
 candidates <- as.character(lead[lead$Freq>5, "Var1"])
 print(candidates)
 ```
@@ -170,8 +195,19 @@ print(candidates)
 ## Run trans eQTL analysis
 
 Let's run a trans eQTL analysis for those eight genes and the 109 AF GWAS SNPs:
+```{r, eval=F}
+eQTL <- trans.qtl(prefix = "/example",
+                  genotype_file_name = "https://github.com/heiniglab/symatrial/raw/master/example_data/1k_genomes_AF_snps.txt",
+                  expression_file_name = t(df[, candidates]),
+                  covariates_file_name = df$sex,
+                  threshold = 1,
+                  compute.all = T,
+                  min.pv.by.genesnp = T,
+                  save.memory = F,
+                  load.qtls = T)
+```
 
-```{r, message=FALSE}
+```{r,echo=F}
 eQTL <- NULL
 try({
   eQTL <- trans.qtl(prefix = "/tmp/example",
@@ -188,7 +224,9 @@ if(is.null(eQTL)){
   print("Something went wrong when running MatrixEQTL. Let's load the results.")
   eQTL <- readRDS("https://github.com/heiniglab/symatrial/raw/master/example_data/1k_genomes_trans_eQTLs.RDS")
 }
-print("Top trans eQTLs:")
+```
+Top trans eQTLs:
+```{r}
 head(eQTL$all$eqtls[order(eQTL$all$eqtls$pvalue), ])
 ```
 
