@@ -49,17 +49,17 @@ if(length(miss.packages)>0){
 
 
 ```{r, eval=F, echo=F}
-if("devtools" %in% packages){
+if("devtools" %in% miss.packages){
   install.packages("devtools", dependencies = T, clean = T)
 }
-if("fgsea" %in% packages){
+if("fgsea" %in% miss.packages){
   BiocManager::install("fgsea", dependencies = T, clean = T)
 }
-if("MatrixEQTL" %in% packages){
+if("MatrixEQTL" %in% miss.packages){
   library(devtools)
   devtools::install_github("andreyshabalin/MatrixEQTL", force=T)
 }
-if("eQTLpipeline" %in% packages){
+if("eQTLpipeline" %in% miss.packages){
   library(devtools)
   devtools::install_github("matthiasheinig/eQTLpipeline", force=T)
 }
@@ -160,25 +160,29 @@ try({
                      minSize = 5,
                      maxSize=100)
   fgsea.res <- fgsea.res[order(fgsea.res$pval), ]
+  saveRDS(fgsea.res, file = "1k_genomes_fgsea_eQTS.RDS")
 })
   
 if(is.null(fgsea.res)){
   print("fgsea is not installed or pathway annotations are missing. Let's load the results:")
-  fgsea.res <- readRDS("https://github.com/heiniglab/symatrial/raw/master/example_data/1k_genomes_fgsea_eQTS.RDS")
+  fgsea.res <- data.frame(readRDS("https://github.com/heiniglab/symatrial/raw/master/example_data/1k_genomes_fgsea_eQTS.RDS"))
 }
 ```
 
 Top five pathways:
 ```{r}
-head(fgsea.res[1:5, -8])
+head(data.frame(fgsea.res[1:5, -8]))
 ```
+
+Please note:  
+Depending on the R version and fgsea package version, the ranking and therefore also the leading edges might differ slightly.
 
 ## Extract the leadingEdge as candidate genes:
 
 As this is only an example dataset for demonstration, we choose a significane threshold of P < 0.01. However, for a real analysis we would recommend a much more stringent cutoff based on the adjusted p-value (FDR).
 
 For each gene set, the leadingEdge contains the genes that possibly drive the enrichment. We therefore use those genes for significant pathways. To narrow it down further, we check if the same genes are contained in the leadingEdge of multiple pathways.  
-We take all genes, that appear more than 5 times (8 genes in total) as candidates for the trans eQTL analysis.
+We take all genes, that appear more than 5 times (9 genes in total) as candidates for the trans eQTL analysis.
 
 ```{r, fig.height=3}
 lead <- data.frame(table(unlist( fgsea.res[fgsea.res$pval<0.01, "leadingEdge"])))
@@ -196,7 +200,7 @@ print(candidates)
 
 Let's run a trans eQTL analysis for those eight genes and the 109 AF GWAS SNPs:
 ```{r, eval=F}
-eQTL <- trans.qtl(prefix = "/example",
+eQTL <- trans.qtl(prefix = "example",
                   genotype_file_name = "https://github.com/heiniglab/symatrial/raw/master/example_data/1k_genomes_AF_snps.txt",
                   expression_file_name = t(df[, candidates]),
                   covariates_file_name = df$sex,
@@ -210,7 +214,7 @@ eQTL <- trans.qtl(prefix = "/example",
 ```{r,echo=F}
 eQTL <- NULL
 try({
-  eQTL <- trans.qtl(prefix = "/tmp/example",
+  eQTL <- trans.qtl(prefix = "example",
                     genotype_file_name = "https://github.com/heiniglab/symatrial/raw/master/example_data/1k_genomes_AF_snps.txt",
                     expression_file_name = t(df[, candidates]),
                     covariates_file_name = df$sex,
@@ -219,6 +223,7 @@ try({
                     min.pv.by.genesnp = T,
                     save.memory = F,
                     load.qtls = T)
+  #saveRDS(eQTL, file = "1k_genomes_trans_eQTLs.RDS")
 })
 if(is.null(eQTL)){
   print("Something went wrong when running MatrixEQTL. Let's load the results.")
@@ -228,6 +233,10 @@ if(is.null(eQTL)){
 Top trans eQTLs:
 ```{r}
 head(eQTL$all$eqtls[order(eQTL$all$eqtls$pvalue), ])
+```
+
+```{r}
+sessionInfo()
 ```
 
 

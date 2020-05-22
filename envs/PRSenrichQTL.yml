@@ -1,0 +1,38 @@
+name: PRSenrichQTL
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - bioconductor-biomart
+  - bioconductor-fgsea=1.12.0
+  - bioconductor-genomicranges
+  - bioconductor-gviz
+  - bioconductor-rtracklayer
+  - bioconductor-snpStats
+  - bioconductor-variantannotation
+  - r-base=3.6.3
+  - r-batchjobs
+  - r-batchtools
+  - r-data.table
+  - r-devtools
+  - r-dplyr
+  - r-genabel
+  - r-genabel.data
+  - r-ggplot2
+  - r-ggpubr
+  - r-glmnet
+  - r-knitr
+  - r-latex2exp
+  - r-lemon
+  - r-markdown
+  - r-pheatmap
+  - r-rcolorbrewer
+  - r-reshape2
+  - r-rmarkdown
+  - r-rsqlite=2.2
+prefix: ~/miniconda2/envs/PRSenrichQTL
+
+# library(devtools)
+# devtools::install_github("andreyshabalin/MatrixEQTL", force=T)
+# devtools::install_github("matthiasheinig/eQTLpipeline", force=T)

@@ -11,3 +11,6 @@ tmp_run*
 E-GEUV-1_tpms.tsv
 c5.bp.v7.1.symbols.gmt
 tmp
+example_covariate.txt
+example_gene.txt
+example_QTL_results.txt
