@@ -10,24 +10,18 @@ get.duplicates <- function(df, cols){
               all.y=T)
 }
 
-library(pROC)   # make ROC curves
-library(ROCR)   # compute AUC
-library(pscl)   # compute pseudo R^2
 library(ggplot2)
 library(ggpubr)
 library(RColorBrewer)
-library(caret)
-library(plyr)
-library(data.table)
-gg_color_hue <- function(n) {
-  hues = seq(15, 375, length = n + 1)
-  hcl(h = hues, l = 65, c = 100)[1:n]
-}
+library(fgsea)
 
 HMGU.blue <- "#003E6E"
 mygray <- "#C6DDEA"
 col.paired <- brewer.pal(n = 11, "Paired")
 col.set <- col.paired[c(2,8,9)]
+
+gmt <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c5.bp.v6.1.symbols.gmt.txt")
+set.seed(1111)
 
 scores <- readRDS(paste0(get.path("dataset", local),
                          "risk_score/GPS_scores_EUR_AFHRI-B.RDS"))
@@ -35,60 +29,6 @@ scores$AF_Status <- factor(scores$AF_Status, levels = c(0,1,2), labels = c("ctrl
 scores$fibro.score.imp.prot.meta <- NULL
 scores <- scores[!duplicated(scores), ]
 rownames(scores) <- scores$externID2
-
-# transcriptomics eQTS ---------------------------------------------------------
-res.GPS.trans.file <- paste0(get.path("dataset", local),
-                             "risk_score/correlations/",
-                             "assoc_transcriptomics_GPS_covs_RIN.RDS")
-if(!file.exists(res.GPS.trans.file)){
-  texpr <- readRDS(paste0(get.path("dataset", local),
-                          "AFHRI_B_transcriptomics_QC_symbol.RDS"))
-  tpheno <- readRDS(paste0(get.path("dataset", local),
-                           "AFHRI_B_transcriptomics_phenos_symbol.RDS"))
-  tpheno$externID2 <- sub(".RAA", "", tpheno$externID)
-  covs <- c("age", "sex", "BMI", "sysBP", "CRP", "NTproBNP", "RIN")
-  tpheno2 <- merge(tpheno[, c("externID", "externID2", covs)],
-                   scores[, c("externID2", "AF.GPS", "percentile.AF")],
-                   all.x = T)
-  tpheno2 <- tpheno2[!duplicated(tpheno2), ]
-  tpheno3 <- tpheno2[complete.cases(tpheno2), ]
-  tpheno3$expr <- NA
-  tpheno3$res <- NA
-  df <- tpheno3
-  
-  res.GPS.trans <- data.frame(matrix(nrow = dim(texpr)[1], ncol = 13),
-                              stringsAsFactors = F,
-                              row.names = rownames(texpr))
-  colnames(res.GPS.trans) <- c("id",
-                               "Estimate", "StdError", "tvalue", "pvalueT", "padjT",
-                               "ResDf", "RSS", "Df", "SumOfSq", "F", "pvalueF", "padjF")
-  
-  for (i in 1:(dim(texpr)[1])){
-    #i=1
-    id <- rownames(texpr)[i]
-    df$expr <- as.numeric(texpr[id, df$externID])
-    df$res <- residuals.lm(lm(expr ~ age + sex + BMI + sysBP + CRP + NTproBNP + RIN,
-                              data = df))
-    lmres <- lm(res ~ percentile.AF,
-                data = df)
-    res.GPS.trans[id, ] <- c(id,
-                             summary(lmres)$coefficients["percentile.AF", ],
-                             NA,
-                             NA, NA, NA, NA, NA, NA,
-                             NA)
-    if(i %% 1000 == 0) print(paste0("Gene ", i, " / ", dim(texpr)[1], " done"))
-  }
-  res.GPS.trans$Estimate <- as.numeric(res.GPS.trans$Estimate)
-  res.GPS.trans$StdError <- as.numeric(res.GPS.trans$StdError)
-  res.GPS.trans$tvalue <- as.numeric(res.GPS.trans$tvalue)
-  res.GPS.trans$pvalueT <- as.numeric(res.GPS.trans$pvalueT)
-  res.GPS.trans$padjT <- p.adjust(res.GPS.trans$pvalueT, method = "BH")
-  res.GPS.trans$padjF <- p.adjust(res.GPS.trans$pvalueF, method = "BH")
-  saveRDS(res.GPS.trans,
-          file = res.GPS.trans.file)
-} else {
-  res.GPS.trans <- readRDS(res.GPS.trans.file)
-}
 
 expr <- readRDS(file=paste0(get.path("dataset", local),
                             "AFHRI_B_transcriptomics_QC_symbol.RDS"))
@@ -115,68 +55,123 @@ tpm.aa$highly.expressed <- as.numeric(log(tpm.aa$meanExpr+1) > cutoff)
 tpm.aa2 <- tpm.aa[!duplicated(tpm.aa$Description), c("Description", "meanExpr", "AFHRIB", "highly.expressed")]
 tpm.aa2 <- tpm.aa2[!is.na(tpm.aa2$AFHRIB), ]
 
-res.GPS.trans$Description <- rownames(res.GPS.trans)
-res.GPS.trans2 <- merge(res.GPS.trans,
-                        tpm.aa2[, c("Description", "highly.expressed", "meanExpr")],
-                        all.x = T)
-res.GPS.trans2$padjT.highly.expressed <- NA
-res.GPS.trans2$padjT.highly.expressed[which(res.GPS.trans2$highly.expressed==1)] <- p.adjust(res.GPS.trans2$pvalueT[which(res.GPS.trans2$highly.expressed==1)], method = "BH")
-rownames(res.GPS.trans2) <- res.GPS.trans2$id
-top.table.trans <- rbind(res.GPS.trans2[order(res.GPS.trans2$pvalueT + as.numeric(res.GPS.trans2$Estimate < 0))[1:10], ],
+
+
+# Transcriptomics eQTS ---------------------------------------------------------
+## eQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/RIN --------------------
+
+eQTS.file <- paste0(get.path("results", local),
+                    "imputed/trans/eQTS/",
+                    "eQTS_percAF_covs_RIN.RDS")
+if(!file.exists(eQTS.file)){
+  texpr <- readRDS(paste0(get.path("dataset", local),
+                          "AFHRI_B_transcriptomics_QC_symbol.RDS"))
+  tpheno <- readRDS(paste0(get.path("dataset", local),
+                           "AFHRI_B_transcriptomics_phenos_symbol.RDS"))
+  tpheno$externID2 <- sub(".RAA", "", tpheno$externID)
+  covs <- c("age", "sex", "BMI", "sysBP", "CRP", "NTproBNP", "RIN")
+  tpheno2 <- merge(tpheno[, c("externID", "externID2", covs)],
+                   scores[, c("externID2", "AF.GPS", "percentile.AF")],
+                   all.x = T)
+  tpheno2 <- tpheno2[!duplicated(tpheno2), ]
+  tpheno3 <- tpheno2[complete.cases(tpheno2), ]
+  tpheno3$expr <- NA
+  tpheno3$res <- NA
+  df <- tpheno3
+  
+  res.eQTS <- data.frame(matrix(nrow = dim(texpr)[1], ncol = 8),
+                         stringsAsFactors = F,
+                         row.names = rownames(texpr))
+  colnames(res.eQTS) <- c("id", "N", "df",
+                          "Estimate", "StdError", "tvalue", "pvalueT", "padjT")
+  
+  for (i in 1:(dim(texpr)[1])){
+    #i=1
+    id <- rownames(texpr)[i]
+    df$expr <- as.numeric(texpr[id, df$externID])
+    lmres <- lm(expr ~ percentile.AF + age + sex + BMI + sysBP + CRP + NTproBNP + RIN,
+                data = df)
+    res.eQTS[id, ] <- c(id, dim(lmres$model)[1], lmres$df.residual,
+                        summary(lmres)$coefficients["percentile.AF", ],
+                        NA)
+    if(i %% 1000 == 0) print(paste0("Gene ", i, " / ", dim(texpr)[1], " done"))
+  }
+  res.eQTS$N <- as.numeric(res.eQTS$N)
+  res.eQTS$df <- as.numeric(res.eQTS$df)
+  res.eQTS$Estimate <- as.numeric(res.eQTS$Estimate)
+  res.eQTS$StdError <- as.numeric(res.eQTS$StdError)
+  res.eQTS$tvalue <- as.numeric(res.eQTS$tvalue)
+  res.eQTS$pvalueT <- as.numeric(res.eQTS$pvalueT)
+  res.eQTS$padjT <- p.adjust(res.eQTS$pvalueT, method = "BH")
+  
+  res.eQTS$Description <- rownames(res.eQTS)
+  res.eQTS2 <- merge(res.eQTS,
+                     tpm.aa2[, c("Description", "highly.expressed", "meanExpr")],
+                     all.x = T)
+  res.eQTS2$padjT.highly.expressed <- NA
+  res.eQTS2$padjT.highly.expressed[which(res.eQTS2$highly.expressed==1)] <-
+    p.adjust(res.eQTS2$pvalueT[which(res.eQTS2$highly.expressed==1)],
+             method = "BH")
+  rownames(res.eQTS2) <- res.eQTS2$id
+  saveRDS(res.eQTS2,
+          file = eQTS.file)
+} else {
+  res.eQTS2 <- readRDS(eQTS.file)
+}
+
+top.table.trans <- rbind(res.eQTS2[order(res.eQTS2$pvalueT +
+                                           as.numeric(res.eQTS2$Estimate < 0))[1:10], ],
                          NA,
-                         res.GPS.trans2[order(res.GPS.trans2$pvalueT + as.numeric(res.GPS.trans2$Estimate > 0))[1:10], ])
+                         res.eQTS2[order(res.eQTS2$pvalueT + 
+                                           as.numeric(res.eQTS2$Estimate > 0))[1:10], ])
 signif(top.table.trans[, c("Estimate", "tvalue", "pvalueT", "padjT", "padjT.highly.expressed")],
        digits = 3)
 
-top.table.trans <- res.GPS.trans2[which(res.GPS.trans2$highly.expressed==1), ]
+top.table.trans <- res.eQTS2[which(res.eQTS2$highly.expressed==1), ]
 top.table.trans <- top.table.trans[order(top.table.trans$pvalueT)[1:10], ]
 signif(top.table.trans[order(top.table.trans$tvalue, decreasing=T),
                        c("Estimate", "tvalue", "pvalueT")],
        digits = 3)
 
-# transcriptomics GSEA on eQTS -------------------------------------------------
-fgsea.trans.file <- paste0(get.path("dataset", local),
-                           "risk_score/correlations/",
-                           "fgsea_assoc_transcriptomics_GPS_covs_RIN.RDS")
-if(!file.exists(fgsea.trans.file)){
-  fgsea.trans <- NULL
-  library(fgsea)
+
+# GSEA on eQTS -----------------------------------------------------------------
+## GSEA on eQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/RIN ------------
+
+fgsea.eQTS.file <- paste0(get.path("results", local),
+                          "imputed/trans/eQTS/",
+                          "fgsea_eQTS_percAF_covs_RIN.RDS")
+if(!file.exists(fgsea.eQTS.file)){
   
-  ## GO biological process
-  gmt <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c5.bp.v6.1.symbols.gmt.txt")
+  fgsea.eQTS <- NULL
+  eQTS.file <- paste0(get.path("results", local),
+                      "imputed/trans/eQTS/",
+                      "eQTS_percAF_covs_RIN.RDS")
   
-  rank <- res.GPS.trans2[, "tvalue"]
-  names(rank) <- res.GPS.trans2[, "id"]
-  fgsea.trans[["GObp_all"]] <- fgsea(gmt,
+  eQTS <- readRDS(eQTS.file)
+  
+  rank <- eQTS[which(eQTS$highly.expressed==1), "tvalue"]
+  names(rank) <- eQTS[which(eQTS$highly.expressed==1), "id"]
+  fgsea.eQTS[["GObp_high"]] <- fgsea(gmt,
                                      rank,
                                      nperm=100000,
                                      minSize = 15,
                                      maxSize=500)
-  fgsea.trans[["GObp_all"]] <- fgsea.trans[["GObp_all"]][order(fgsea.trans[["GObp_all"]]$pval), ]
-
-  rank <- res.GPS.trans2[which(res.GPS.trans2$highly.expressed==1), "tvalue"]
-  names(rank) <- res.GPS.trans2[which(res.GPS.trans2$highly.expressed==1), "id"]
-  fgsea.trans[["GObp_high"]] <- fgsea(gmt,
-                                      rank,
-                                      nperm=100000,
-                                      minSize = 15,
-                                      maxSize=500)
-  fgsea.trans[["GObp_high"]] <- fgsea.trans[["GObp_high"]][order(fgsea.trans[["GObp_high"]]$pval), ]
+  fgsea.eQTS[["GObp_high"]] <- fgsea.eQTS[["GObp_high"]][order(fgsea.eQTS[["GObp_high"]]$pval), ]
   
-  saveRDS(fgsea.trans, file = fgsea.trans.file)
+  fgsea.eQTS[["significant"]] <- fgsea.eQTS[["GObp_high"]][fgsea.eQTS[["GObp_high"]]$padj<0.05, ]
+  fgsea.eQTS[["leadingEdge"]] <- data.frame(table(unlist(fgsea.eQTS[["significant"]]$leadingEdge)))
+  
+  saveRDS(fgsea.eQTS, file = fgsea.eQTS.file)
 } else {
-  fgsea.trans <- readRDS(fgsea.trans.file)
+  fgsea.eQTS <- readRDS(fgsea.eQTS.file)
 }
 
-df1 <- fgsea.trans[["GObp_high"]]
-df2 <- df1[df1$padj<0.05, ]
-df3 <- data.frame(table(unlist(df2$leadingEdge)))
-
 # Proteomics pQTS --------------------------------------------------------------
-res.GPS.prot.file <- paste0(get.path("dataset", local),
-                            "risk_score/correlations/",
-                            "assoc_proteomics_GPS_covs_conc.RDS")
-if(!file.exists(res.GPS.prot.file)){
+## pQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/prot.conc --------------
+pQTS.file <- paste0(get.path("results", local),
+                    "imputed/trans/pQTS/",
+                    "pQTS_percAF_covs_conc.RDS")
+if(!file.exists(pQTS.file)){
   pexpr <- readRDS(paste0(get.path("dataset", local),
                           "AFHRI_B_proteomics_QC_symbol.RDS"))
   ppheno <- readRDS(paste0(get.path("dataset", local),
@@ -191,80 +186,91 @@ if(!file.exists(res.GPS.prot.file)){
   ppheno3$expr <- NA
   df <- ppheno3
   
-  res.GPS.prot <- data.frame(matrix(nrow = dim(pexpr)[1], ncol = 13),
-                             stringsAsFactors = F,
-                             row.names = rownames(pexpr))
-  colnames(res.GPS.prot) <- c("id",
-                              "Estimate", "StdError", "tvalue", "pvalueT", "padjT",
-                              "ResDf", "RSS", "Df", "SumOfSq", "F", "pvalueF", "padjF")
+  res.pQTS <- data.frame(matrix(nrow = dim(pexpr)[1], ncol = 8),
+                         stringsAsFactors = F,
+                         row.names = rownames(pexpr))
+  colnames(res.pQTS) <- c("id", "N", "df",
+                          "Estimate", "StdError", "tvalue", "pvalueT", "padjT")
+  
   for (i in 1:(dim(pexpr)[1])){
     #i=1
     id <- rownames(pexpr)[i]
     df$expr <- as.numeric(pexpr[id, df$externID])
-    lmres <- lm(expr ~ AF.GPS + age + sex + BMI + sysBP + CRP + NTproBNP + Protein.c..ug.ul.,
+    lmres <- lm(expr ~ percentile.AF + age + sex + BMI + sysBP + CRP + NTproBNP + Protein.c..ug.ul.,
                 data = df)
-    lmres.null <- lm(expr ~ age + sex + BMI + sysBP + CRP + NTproBNP + Protein.c..ug.ul.,
-                     data = df) 
-    anova.res <- anova(lmres.null, lmres)
-    res.GPS.prot[id, ] <- c(id,
-                            summary(lmres)$coefficients["AF.GPS", ],
-                            NA,
-                            as.data.frame(anova.res[2, ]),
-                            NA)
+    res.pQTS[id, ] <- c(id, dim(lmres$model)[1], lmres$df.residual,
+                        summary(lmres)$coefficients["percentile.AF", ],
+                        NA)
     if(i %% 100 == 0) print(paste0("Gene ", i, " / ", dim(pexpr)[1], " done"))
   }
-  res.GPS.prot$padjT <- p.adjust(res.GPS.prot$pvalueT, method = "BH")
-  res.GPS.prot$padjF <- p.adjust(res.GPS.prot$pvalueF, method = "BH")
-  saveRDS(res.GPS.prot,
-          file = res.GPS.prot.file)
+  res.pQTS$N <- as.numeric(res.pQTS$N)
+  res.pQTS$df <- as.numeric(res.pQTS$df)
+  res.pQTS$Estimate <- as.numeric(res.pQTS$Estimate)
+  res.pQTS$StdError <- as.numeric(res.pQTS$StdError)
+  res.pQTS$tvalue <- as.numeric(res.pQTS$tvalue)
+  res.pQTS$pvalueT <- as.numeric(res.pQTS$pvalueT)
+  res.pQTS$padjT <- p.adjust(res.pQTS$pvalueT, method = "BH")
+  
+  res.pQTS$Description <- rownames(res.pQTS)
+  res.pQTS2 <- merge(res.pQTS,
+                     tpm.aa2[, c("Description", "highly.expressed", "meanExpr")],
+                     all.x = T)
+  res.pQTS2$padjT.highly.expressed <- NA
+  res.pQTS2$padjT.highly.expressed[which(res.pQTS2$highly.expressed==1)] <-
+    p.adjust(res.pQTS2$pvalueT[which(res.pQTS2$highly.expressed==1)],
+             method = "BH")
+  rownames(res.pQTS2) <- res.pQTS2$id
+  saveRDS(res.pQTS2,
+          file = pQTS.file)
 } else {
-  res.GPS.prot <- readRDS(res.GPS.prot.file)
+  res.pQTS2 <- readRDS(pQTS.file)
 }
-top.table.prot <- rbind(res.GPS.prot[order(res.GPS.prot$pvalueF +
-                                             as.numeric(res.GPS.prot$Estimate < 0))[1:10], ],
-                        res.GPS.prot[order(res.GPS.prot$pvalueF +
-                                             as.numeric(res.GPS.prot$Estimate > 0))[1:10], ])
 
-res.GPS.prot$Description <- rownames(res.GPS.prot)
-res.GPS.prot2 <- merge(res.GPS.prot,
-                       tpm.aa2[, c("Description", "highly.expressed", "meanExpr")],
-                       all.x = T)
-res.GPS.prot2$padjT.highly.expressed <- NA
-res.GPS.prot2$padjT.highly.expressed[which(res.GPS.prot2$highly.expressed==1)] <- p.adjust(res.GPS.prot2$pvalueT[which(res.GPS.prot2$highly.expressed==1)], method = "BH")
-rownames(res.GPS.prot2) <- res.GPS.prot2$id
-
-top.table.prot <- rbind(res.GPS.prot2[order(res.GPS.prot2$pvalueT + as.numeric(res.GPS.prot2$Estimate < 0))[1:10], ],
+top.table.prot <- rbind(res.pQTS2[order(res.pQTS2$pvalueT + as.numeric(res.pQTS2$Estimate < 0))[1:10], ],
                         NA,
-                        res.GPS.prot2[order(res.GPS.prot2$pvalueT + as.numeric(res.GPS.prot2$Estimate > 0))[1:10], ])
+                        res.pQTS2[order(res.pQTS2$pvalueT + as.numeric(res.pQTS2$Estimate > 0))[1:10], ])
 signif(top.table.prot[, c("Estimate", "tvalue", "pvalueT", "padjT", "padjT.highly.expressed")],
        digits = 3)
 
 
-# Proteomics GSEA pQTS ---------------------------------------------------------
-fgsea.prot.file <- paste0(get.path("dataset", local),
-                          "risk_score/correlations/",
-                          "fgsea_assoc_proteomics_GPS_covs_conc.RDS")
-if(!file.exists(fgsea.prot.file)){
-  fgsea.prot <- NULL
-  library(fgsea)
+# GSEA on pQTS -----------------------------------------------------------------
+## GSEA on pQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/prot.conc ------
+
+fgsea.pQTS.file <- paste0(get.path("results", local),
+                          "imputed/trans/pQTS/",
+                          "fgsea_pQTS_percAF_covs_conc.RDS")
+if(!file.exists(fgsea.pQTS.file)){
   
-  ## GO biological process
-  gmt <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c5.bp.v6.1.symbols.gmt.txt")
+  fgsea.pQTS <- NULL
+  pQTS.file <- paste0(get.path("results", local),
+                      "imputed/trans/pQTS/",
+                      "pQTS_percAF_covs_conc.RDS")
   
-  rank <- res.GPS.prot2[, "tvalue"]
-  names(rank) <- res.GPS.prot2[, "id"]
-  fgsea.prot[["GObp_all"]] <- fgsea(gmt,
+  pQTS <- readRDS(pQTS.file)
+  
+  rank <- pQTS[which(pQTS$highly.expressed==1), "tvalue"]
+  names(rank) <- pQTS[which(pQTS$highly.expressed==1), "id"]
+  fgsea.pQTS[["GObp_high"]] <- fgsea(gmt,
+                                     rank,
+                                     nperm=100000,
+                                     minSize = 5,
+                                     maxSize=500)
+  fgsea.pQTS[["GObp_high"]] <- fgsea.pQTS[["GObp_high"]][order(fgsea.pQTS[["GObp_high"]]$pval), ]
+  
+  rank <- pQTS[, "tvalue"]
+  names(rank) <- pQTS[, "id"]
+  fgsea.pQTS[["GObp_all"]] <- fgsea(gmt,
                                     rank,
                                     nperm=100000,
                                     minSize = 5,
                                     maxSize=500)
-  fgsea.prot[["GObp_all"]] <- fgsea.prot[["GObp_all"]][order(fgsea.prot[["GObp_all"]]$pval), ]
+  fgsea.pQTS[["GObp_all"]] <- fgsea.pQTS[["GObp_all"]][order(fgsea.pQTS[["GObp_all"]]$pval), ]
   
-  saveRDS(fgsea.prot, file = fgsea.prot.file)
+  fgsea.pQTS[["significant"]] <- fgsea.pQTS[["GObp_all"]][fgsea.pQTS[["GObp_all"]]$padj<0.05, ]
+  fgsea.pQTS[["leadingEdge"]] <- data.frame(table(unlist(fgsea.pQTS[["significant"]]$leadingEdge)))
+  
+  saveRDS(fgsea.pQTS, file = fgsea.pQTS.file)
 } else {
-  fgsea.prot <- readRDS(fgsea.prot.file)
+  fgsea.pQTS <- readRDS(fgsea.pQTS.file)
 }
 
-dfp1 <- fgsea.prot[["GObp_all"]] 
-dfp2 <- dfp1[dfp1$padj<0.05, ]
-dfp3 <- data.frame(table(unlist(dfp2$leadingEdge)))

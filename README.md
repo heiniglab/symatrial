@@ -23,7 +23,9 @@ iii) Establish the link between the core gene candidates and the disease based o
 
 # Run your own analysis
 
-Want to try our approach? Let's get started with a short [tutorial](https://colab.research.google.com/drive/1ZSQF1Lh86tVgIlfrK10EB3VUlNDoG9fs?usp=sharing) on google colab (15min installation and <5min runtime)!
+Want to try our approach? Let's get started with a short tutorial!
+You can have a look at the [html](https://github.com/heiniglab/symatrial/blob/master/example_data/PRSenrichQTL_tutorial.html), run it in a [R markdown](https://github.com/heiniglab/symatrial/blob/master/example_data/PRSenrichQTL_tutorial.Rmd) or visit our [notebook](https://colab.research.google.com/drive/1ZSQF1Lh86tVgIlfrK10EB3VUlNDoG9fs?usp=sharing) on google colab!
+You can run all scripts without having the R packages installed, but if you want to run your own data, you can use the google colab to install everything you need in less than 15 minutes!
 
 ## Installation instructions
 Analysis was done using R 3.4.1.
@@ -103,3 +105,25 @@ The final list of 109 tested SNPs derived by [pruning](https://github.com/heinig
 GSEA is performed on [eQTS/pQTS rankings](https://github.com/heiniglab/symatrial/tree/master/scripts/PRS_trans_analyses/QTS_enrich.R) and [trans QTL analysis](https://github.com/heiniglab/symatrial/tree/master/scripts/PRS_trans_analyses/transQTLs.R) is carried out for the pruned AF SNPs with a subset of genes.
 
 A [power analysis](https://github.com/heiniglab/symatrial/tree/master/scripts/PRS_trans_analyses/eqtl_power_calc_final.pdf) was used to estimate the number of genes to consider in our analysis.
+
+
+
+
+
+# LICENSE
+
+QTL approaches in human tissue for limited sample sizes
+Copyright (C) 2020  Ines Assum and Matthias Heinig
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
