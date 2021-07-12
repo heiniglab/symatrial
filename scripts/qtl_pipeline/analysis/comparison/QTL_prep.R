@@ -2,8 +2,7 @@
 # first look into gtex_prep.R, plasma_pQTL_prep.R and mQTL_prep.R
 # which IDs to add for further comparisons
 
-setwd("/home/icb/ines.assum/projects/symAtrial_QTL/scripts/analysis/comparison")
-# setwd("/Users/ines/Documents/ICB/PhD/projects/symAtrial_QTL/scripts/analysis/comparison")
+setwd("~/work/symAtrial_QTL/scripts/analysis/comparison")
 
 source("../../helper/helper.R")
 
@@ -14,6 +13,22 @@ eqtl.table <- readRDS(paste0(get.path("results", local),
                              paste("imputed", "cis", "linear", "eqtl", "normalized", "factors_no_cov", "eqtl_nk12.RDS", sep="/")))$cis$eqtls
 eqtl.table$snps <- as.character(eqtl.table$snps)
 eqtl.table$gene <- as.character(eqtl.table$gene)
+
+if(T){
+  eqtl.all.table <- readRDS(paste0(get.path("results", local),
+                                   paste("imputed", "cis", "linear",
+                                         "eqtl", "normalized", "factors_all",
+                                         "eqtl_nk06.RDS", sep="/")))$cis$eqtls
+  eqtl.all.table$snps <- as.character(eqtl.all.table$snps)
+  eqtl.all.table$gene <- as.character(eqtl.all.table$gene)
+  
+  eqtl.pop.table <- readRDS(paste0(get.path("results", local),
+                                   paste("imputed", "cis", "linear",
+                                         "eqtl", "normalized", "factors_pop",
+                                         "eqtl_nk06.RDS", sep="/")))$cis$eqtls
+  eqtl.pop.table$snps <- as.character(eqtl.pop.table$snps)
+  eqtl.pop.table$gene <- as.character(eqtl.pop.table$gene)
+}
 
 pqtl.table <- readRDS(paste0(get.path("results", local),
                              paste("imputed", "cis", "linear", "pqtl", "normalized", "factors_no_cov", "eqtl_nk10.RDS", sep="/")))$cis$eqtls
@@ -34,7 +49,6 @@ ratio.qtl.table <- readRDS(paste0(get.path("results", local),
                                   paste("imputed", "cis", "linear", "ratios", "normalized", "factors_fibro", "eqtl_nk09.RDS", sep="/")))$cis$eqtls
 ratio.qtl.table$snps <- as.character(ratio.qtl.table$snps)
 ratio.qtl.table$gene <- as.character(ratio.qtl.table$gene)
-#ratio.qtl.table$ratioQTL <- as.numeric(as.logical(ratio.qtl.table$FDR<0.05))
 
 snps <- read.table(paste0(get.path("genotype", local),
                           "AFHRI-B_imputed.bim"),
@@ -95,14 +109,99 @@ write.table(eqtl.table.gtex[eqtl.table.gtex$FDR < 0.05, ],
                               sep="/")),
             row.names=F, col.names=T, quote=F, sep="\t")
 saveRDS(eqtl.table.gtex,
-            file=paste0(get.path("results", local),
-                        paste("imputed", "cis", "final",
-                              "eQTL_right_atrial_appendage_allpairs.RDS",
-                              sep="/")))
+        file=paste0(get.path("results", local),
+                    paste("imputed", "cis", "final",
+                          "eQTL_right_atrial_appendage_allpairs.RDS",
+                          sep="/")))
 head(eqtl.table.gtex)
 dim(eqtl.table.gtex)
 dim(eqtl.table)
 rm(eqtl.table, eqtl.table.gtex)
+
+if(T){
+  eqtl.all.table.gtex <- merge(snps, eqtl.all.table,
+                               by.x=c("snpid"), by.y=c("snps"),
+                               all.y = T)
+  eqtl.all.table.gtex <- merge(eqtl.all.table.gtex, gtex.ids,
+                               by.x=c("snpid"), by.y=c("snpid"),
+                               all.x = T)
+  eqtl.all.table.gtex <- merge(eqtl.all.table.gtex, ensembl.ids[, c("ensembl_gene_id", "external_gene_name")],
+                               by.x=c("gene"), by.y=c("external_gene_name"),
+                               all.x = T)
+  colnames(eqtl.all.table.gtex) <- c("gene", "snpid", "chr", "variant_pos", "Allele1", "Allele2", "variant_id", "rs_id",
+                                     "statistic", "pvalue", "FDR", "beta",
+                                     "gtex.variant_id", "gtex.match_alleles", "gene_id")
+  
+  write.table(eqtl.all.table.gtex,
+              file=paste0(get.path("results", local),
+                          paste("imputed", "cis", "final",
+                                "eQTL_cov_all_right_atrial_appendage_allpairs.txt",
+                                sep="/")),
+              row.names=F, col.names=T, quote=F, sep="\t")
+  write.table(eqtl.all.table.gtex[eqtl.all.table.gtex$pvalue < 1e-5, ],
+              file=paste0(get.path("results", local),
+                          paste("imputed", "cis", "final",
+                                "eQTL_cov_all_right_atrial_appendage_allpairs.significant.txt",
+                                sep="/")),
+              row.names=F, col.names=T, quote=F, sep="\t")
+  write.table(eqtl.all.table.gtex[eqtl.all.table.gtex$FDR < 0.05, ],
+              file=paste0(get.path("results", local),
+                          paste("imputed", "cis", "final",
+                                "eQTL_cov_all_right_atrial_appendage_allpairs.significant.FDR.txt",
+                                sep="/")),
+              row.names=F, col.names=T, quote=F, sep="\t")
+  saveRDS(eqtl.all.table.gtex,
+          file=paste0(get.path("results", local),
+                      paste("imputed", "cis", "final",
+                            "eQTL_cov_all_right_atrial_appendage_allpairs.RDS",
+                            sep="/")))
+  head(eqtl.all.table.gtex)
+  dim(eqtl.all.table.gtex)
+  dim(eqtl.all.table)
+  rm(eqtl.all.table, eqtl.all.table.gtex)
+  
+  
+  eqtl.pop.table.gtex <- merge(snps, eqtl.pop.table,
+                               by.x=c("snpid"), by.y=c("snps"),
+                               all.y = T)
+  eqtl.pop.table.gtex <- merge(eqtl.pop.table.gtex, gtex.ids,
+                               by.x=c("snpid"), by.y=c("snpid"),
+                               all.x = T)
+  eqtl.pop.table.gtex <- merge(eqtl.pop.table.gtex, ensembl.ids[, c("ensembl_gene_id", "external_gene_name")],
+                               by.x=c("gene"), by.y=c("external_gene_name"),
+                               all.x = T)
+  colnames(eqtl.pop.table.gtex) <- c("gene", "snpid", "chr", "variant_pos", "Allele1", "Allele2", "variant_id", "rs_id",
+                                     "statistic", "pvalue", "FDR", "beta",
+                                     "gtex.variant_id", "gtex.match_alleles", "gene_id")
+  
+  write.table(eqtl.pop.table.gtex,
+              file=paste0(get.path("results", local),
+                          paste("imputed", "cis", "final",
+                                "eQTL_cov_pop_right_atrial_appendage_allpairs.txt",
+                                sep="/")),
+              row.names=F, col.names=T, quote=F, sep="\t")
+  write.table(eqtl.pop.table.gtex[eqtl.pop.table.gtex$pvalue < 1e-5, ],
+              file=paste0(get.path("results", local),
+                          paste("imputed", "cis", "final",
+                                "eQTL_cov_pop_right_atrial_appendage_allpairs.significant.txt",
+                                sep="/")),
+              row.names=F, col.names=T, quote=F, sep="\t")
+  write.table(eqtl.pop.table.gtex[eqtl.pop.table.gtex$FDR < 0.05, ],
+              file=paste0(get.path("results", local),
+                          paste("imputed", "cis", "final",
+                                "eQTL_cov_pop_right_atrial_appendage_allpairs.significant.FDR.txt",
+                                sep="/")),
+              row.names=F, col.names=T, quote=F, sep="\t")
+  saveRDS(eqtl.pop.table.gtex,
+          file=paste0(get.path("results", local),
+                      paste("imputed", "cis", "final",
+                            "eQTL_cov_pop_right_atrial_appendage_allpairs.RDS",
+                            sep="/")))
+  head(eqtl.pop.table.gtex)
+  dim(eqtl.pop.table.gtex)
+  dim(eqtl.pop.table)
+  rm(eqtl.pop.table, eqtl.pop.table.gtex)
+}
 
 # add gtex and plasma pQTL anno
 # plasma pQTL file header:
@@ -238,17 +337,17 @@ rm(pqtl.res.table.gtex, pqtl.res.table)
 
 ## ratio QTLs
 ratio.qtl.table.gtex <- merge(snps, ratio.qtl.table,
-                             by.x=c("snpid"), by.y=c("snps"),
-                             all.y = T)
+                              by.x=c("snpid"), by.y=c("snps"),
+                              all.y = T)
 ratio.qtl.table.gtex <- merge(ratio.qtl.table.gtex, gtex.ids,
-                             by.x=c("snpid"), by.y=c("snpid"),
-                             all.x = T)
+                              by.x=c("snpid"), by.y=c("snpid"),
+                              all.x = T)
 ratio.qtl.table.gtex <- merge(ratio.qtl.table.gtex, ensembl.ids[, c("ensembl_gene_id", "external_gene_name")],
                               by.x=c("gene"), by.y=c("external_gene_name"),
-                             all.x = T)
+                              all.x = T)
 colnames(ratio.qtl.table.gtex) <- c("gene", "snpid", "chr", "variant_pos", "Allele1", "Allele2", "variant_id", "rs_id",
-                                   "statistic", "pvalue", "FDR", "beta",
-                                   "gtex.variant_id", "gtex.match_alleles", "gene_id")
+                                    "statistic", "pvalue", "FDR", "beta",
+                                    "gtex.variant_id", "gtex.match_alleles", "gene_id")
 
 write.table(ratio.qtl.table.gtex,
             file=paste0(get.path("results", local),
@@ -278,9 +377,220 @@ dim(ratio.qtl.table.gtex)
 dim(ratio.qtl.table)
 rm(ratio.qtl.table.gtex, ratio.qtl.table)
 
+
+
+# Source data - QTL clumps ------
+
+setwd("~/work/symAtrial_QTL/scripts/analysis/comparison")
+
+source("../../helper/helper.R")
+
+local=F
+
+# add LD clumps eQTL ----
+pairs <- readRDS(file=paste0(get.path("results", local),
+                             paste("imputed", "cis", "final",
+                                   "eQTL_right_atrial_appendage_allpairs.RDS",
+                                   sep="/")))
+clump <- readRDS(file = paste0(get.path("results", local),
+                               "imputed/cis/eQTL_clump_relaxed.RDS"))
+
+pairs$LDclumpFDR <- NA
+genes <- unique(pairs[pairs$FDR < 0.05, "gene"])
+for(gene in genes){
+  clump.info <- clump[["FDR"]][[gene]]
+  for(i in 1:dim(clump.info)[1]){
+    lead <- clump.info[i, "SNP"]
+    snps <- c(lead, clump.info[i, "SP2"][[1]])
+    pairs[pairs$gene == gene & pairs$snpid %in% snps, "LDclumpFDR"] <- lead
+  }
+}
+
+pairs$LDclumpP <- NA
+genes <- unique(pairs[pairs$pvalue < 1e-5, "gene"])
+for(gene in genes){
+  clump.info <- clump[["P"]][[gene]]
+  for(i in 1:dim(clump.info)[1]){
+    lead <- clump.info[i, "SNP"]
+    snps <- c(lead, clump.info[i, "SP2"][[1]])
+    pairs[pairs$gene == gene & pairs$snpid %in% snps, "LDclumpP"] <- lead
+  }
+}
+
+saveRDS(pairs,
+        file=paste0(get.path("results", local),
+                    paste("imputed", "cis", "final",
+                          "eQTL_right_atrial_appendage_allpairs_clump.RDS",
+                          sep="/")))
+write.table(pairs,
+            file=paste0(get.path("results", local), "/source_data/",
+                        "eQTL_right_atrial_appendage_allpairs_clump.txt"),
+            quote = F, row.names = F, col.names = T, sep = "\t")
+
+
+# add LD clumps pQTL ----
+pairs <- readRDS(file=paste0(get.path("results", local),
+                             paste("imputed", "cis", "final",
+                                   "pQTL_right_atrial_appendage_allpairs.RDS",
+                                   sep="/")))
+clump <- readRDS(file = paste0(get.path("results", local),
+                               "imputed/cis/pQTL_clump_relaxed.RDS"))
+
+pairs$LDclumpFDR <- NA
+genes <- unique(pairs[pairs$FDR < 0.05, "gene"])
+for(gene in genes){
+  clump.info <- clump[["FDR"]][[gene]]
+  for(i in 1:dim(clump.info)[1]){
+    lead <- clump.info[i, "SNP"]
+    snps <- c(lead, clump.info[i, "SP2"][[1]])
+    pairs[pairs$gene == gene & pairs$snpid %in% snps, "LDclumpFDR"] <- lead
+  }
+}
+
+pairs$LDclumpP <- NA
+genes <- unique(pairs[pairs$pvalue < 1e-5, "gene"])
+for(gene in genes){
+  clump.info <- clump[["P"]][[gene]]
+  for(i in 1:dim(clump.info)[1]){
+    lead <- clump.info[i, "SNP"]
+    snps <- c(lead, clump.info[i, "SP2"][[1]])
+    pairs[pairs$gene == gene & pairs$snpid %in% snps, "LDclumpP"] <- lead
+  }
+}
+
+saveRDS(pairs,
+        file=paste0(get.path("results", local),
+                    paste("imputed", "cis", "final",
+                          "pQTL_right_atrial_appendage_allpairs_clump.RDS",
+                          sep="/")))
+write.table(pairs,
+            file=paste0(get.path("results", local), "/source_data/",
+                        "pQTL_right_atrial_appendage_allpairs_clump.txt"),
+            quote = F, row.names = F, col.names = T, sep = "\t")
+
+
+# add LD clumps ratioQTL ----
+pairs <- readRDS(file=paste0(get.path("results", local),
+                             paste("imputed", "cis", "final",
+                                   "ratios_right_atrial_appendage_allpairs.RDS",
+                                   sep="/")))
+clump <- readRDS(file = paste0(get.path("results", local),
+                               "imputed/cis/ratioQTL_clump_relaxed.RDS"))
+
+pairs$LDclumpFDR <- NA
+genes <- unique(pairs[pairs$FDR < 0.05, "gene"])
+for(gene in genes){
+  clump.info <- clump[["FDR"]][[gene]]
+  for(i in 1:dim(clump.info)[1]){
+    lead <- clump.info[i, "SNP"]
+    snps <- c(lead, clump.info[i, "SP2"][[1]])
+    pairs[pairs$gene == gene & pairs$snpid %in% snps, "LDclumpFDR"] <- lead
+  }
+}
+
+pairs$LDclumpP <- NA
+genes <- unique(pairs[pairs$pvalue < 1e-5, "gene"])
+for(gene in genes){
+  clump.info <- clump[["P"]][[gene]]
+  for(i in 1:dim(clump.info)[1]){
+    lead <- clump.info[i, "SNP"]
+    snps <- c(lead, clump.info[i, "SP2"][[1]])
+    pairs[pairs$gene == gene & pairs$snpid %in% snps, "LDclumpP"] <- lead
+  }
+}
+
+saveRDS(pairs,
+        file=paste0(get.path("results", local),
+                    paste("imputed", "cis", "final",
+                          "ratioQTL_right_atrial_appendage_allpairs_clump.RDS",
+                          sep="/")))
+write.table(pairs,
+            file=paste0(get.path("results", local), "/source_data/",
+                        "ratioQTL_right_atrial_appendage_allpairs_clump.txt"),
+            quote = F, row.names = F, col.names = T, sep = "\t")
+
+
+# add LD clumps res eQTL ----
+pairs <- readRDS(file=paste0(get.path("results", local),
+                             paste("imputed", "cis", "final",
+                                   "res_eQTL_right_atrial_appendage_allpairs.RDS",
+                                   sep="/")))
+clump <- readRDS(file = paste0(get.path("results", local),
+                               "imputed/cis/res_eQTL_clump_relaxed.RDS"))
+
+pairs$LDclumpFDR <- NA
+genes <- unique(pairs[pairs$FDR < 0.05, "gene"])
+for(gene in genes){
+  clump.info <- clump[["FDR"]][[gene]]
+  for(i in 1:dim(clump.info)[1]){
+    lead <- clump.info[i, "SNP"]
+    snps <- c(lead, clump.info[i, "SP2"][[1]])
+    pairs[pairs$gene == gene & pairs$snpid %in% snps, "LDclumpFDR"] <- lead
+  }
+}
+
+pairs$LDclumpP <- NA
+genes <- unique(pairs[pairs$pvalue < 1e-5, "gene"])
+for(gene in genes){
+  clump.info <- clump[["P"]][[gene]]
+  for(i in 1:dim(clump.info)[1]){
+    lead <- clump.info[i, "SNP"]
+    snps <- c(lead, clump.info[i, "SP2"][[1]])
+    pairs[pairs$gene == gene & pairs$snpid %in% snps, "LDclumpP"] <- lead
+  }
+}
+
+saveRDS(pairs,
+        file=paste0(get.path("results", local),
+                    paste("imputed", "cis", "final",
+                          "res_eQTL_right_atrial_appendage_allpairs_clump.RDS",
+                          sep="/")))
+write.table(pairs,
+            file=paste0(get.path("results", local), "/source_data/",
+                        "res_eQTL_right_atrial_appendage_allpairs_clump.txt"),
+            quote = F, row.names = F, col.names = T, sep = "\t")
+
+
+# add LD clumps res pQTL ----
+pairs <- readRDS(file=paste0(get.path("results", local),
+                             paste("imputed", "cis", "final",
+                                   "res_pQTL_right_atrial_appendage_allpairs.RDS",
+                                   sep="/")))
+clump <- readRDS(file = paste0(get.path("results", local),
+                               "imputed/cis/res_pQTL_clump_relaxed.RDS"))
+
+pairs$LDclumpFDR <- NA
+genes <- unique(pairs[pairs$FDR < 0.05, "gene"])
+for(gene in genes){
+  clump.info <- clump[["FDR"]][[gene]]
+  for(i in 1:dim(clump.info)[1]){
+    lead <- clump.info[i, "SNP"]
+    snps <- c(lead, clump.info[i, "SP2"][[1]])
+    pairs[pairs$gene == gene & pairs$snpid %in% snps, "LDclumpFDR"] <- lead
+  }
+}
+
+pairs$LDclumpP <- NA
+genes <- unique(pairs[pairs$pvalue < 1e-5, "gene"])
+for(gene in genes){
+  clump.info <- clump[["P"]][[gene]]
+  for(i in 1:dim(clump.info)[1]){
+    lead <- clump.info[i, "SNP"]
+    snps <- c(lead, clump.info[i, "SP2"][[1]])
+    pairs[pairs$gene == gene & pairs$snpid %in% snps, "LDclumpP"] <- lead
+  }
+}
+
+saveRDS(pairs,
+        file=paste0(get.path("results", local),
+                    paste("imputed", "cis", "final",
+                          "res_pQTL_right_atrial_appendage_allpairs_clump.RDS",
+                          sep="/")))
+write.table(pairs,
+            file=paste0(get.path("results", local), "/source_data/",
+                        "res_pQTL_right_atrial_appendage_allpairs_clump.txt"),
+            quote = F, row.names = F, col.names = T, sep = "\t")
+
 q(save="no")
-
-
-
 
 

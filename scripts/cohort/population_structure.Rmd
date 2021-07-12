@@ -1,0 +1,328 @@
+---
+title: "Nature Communication Revision"
+author: "Ines Assum"
+date: \today
+graphics: yes
+header-includes:
+  \usepackage{graphicx, fancyhdr, multicol, xcolor}
+  \usepackage{sectsty, titling, lmodern}
+  \usepackage[T1]{fontenc}
+  \renewcommand*\familydefault{\sfdefault}
+  \definecolor{myblue}{RGB}{31, 120, 180}
+  \allsectionsfont{\color{myblue}}
+  \sectionfont{\color{myblue}\sectionrule{3ex}{0pt}{-1ex}{1pt}}
+  \renewcommand{\maketitlehookb}{\center \large Population structure and relatedness \\ \vspace{1em}}
+  \pretitle{\begin{center}\LARGE\bfseries\color{myblue}}
+  \posttitle{\par\end{center}\vskip 0.5em}
+  \pagestyle{fancy}
+  \lhead{Ines Assum}
+  \rhead{\today}
+  \chead{Revision - Population structure and relatedness}
+output: 
+  pdf_document:
+    toc: FALSE
+    number_sections: TRUE
+---
+
+```{r setup, include=FALSE}
+options(width = 90)
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+```
+
+```{r}
+source("../helper/helper.R")
+local=F
+get.duplicates <- function(df, cols){
+  df2 <- data.frame(table(df[, cols]))
+  df2 <- df2[df2$Freq>1, ]
+  colnames(df2) <- c(cols, "Freq")
+  df <- merge(df,
+              df2[cols],
+              all.y=T)
+}
+
+library(ggplot2)
+library(ggpubr)
+library(RColorBrewer)
+library(MatrixEQTL)
+library(eulerr)
+library(qvalue)
+
+HMGU.blue <- "#003E6E"
+mygray <- "#C6DDEA"
+col.paired <- brewer.pal(n = 11, "Paired")
+col.set <- col.paired[c(2,8,9)]
+
+ref_dir <- "/storage/groups/epigenereg01/workspace/public_data/1000genomes/population_reference/"
+```
+
+# Assess population structure and relatedness in the AFHRI-B cohort
+
+## Relatedness
+```{r, eval=F}
+bfile <- paste0(get.path("genotype", local),
+                "AFHRI-B")
+outfile <- paste0(get.path("genotype", local),
+                "AFHRI-B_IBD")
+system(paste0("plink --bfile ", bfile,
+              " --genome ",
+              " --het ",
+              " --out ", outfile))
+````
+
+```{r}
+ibd <- read.table(paste0(get.path("genotype", local),
+                         "AFHRI-B_IBD.genome"),
+                  h = T, stringsAsFactors = F)
+hist(ibd$PI_HAT, breaks = 100,
+     main = "IBD for the AFHRI-B cohort by PI_HAT estimate")
+print(paste0("Max. PI_HAT: ", max(ibd$PI_HAT)))
+
+het <- read.table(paste0(get.path("genotype", local),
+                         "AFHRI-B_IBD.het"),
+                  h = T, stringsAsFactors = F)
+
+hist(het$F, breaks = 20,
+     main = "Heterozygosity for the AFHRI-B cohort given by the F-value")
+print(paste0("With min/max F-values between  ", min(het$F), " and ", max(het$F)))
+```
+
+
+```{r, eval=F}
+ref_dir <- "/storage/groups/epigenereg01/workspace/public_data/1000genomes/population_reference/"
+snp_file <- paste0(ref_dir,
+                   "hapmap3r2_CEU.CHB.JPT.YRI.no-at-cg-snps.txt")
+
+for (i in 1:22){
+  chr <- paste0("chr", i)
+  bfile <- paste0("ALL.", chr, ".phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes")
+  out <- paste0(ref_dir,
+                "hapmap3_CEU.CHB.JPT.YRI.no-at-cg-snps_", chr)
+  system(paste0("cd /storage/groups/epigenereg01/workspace/public_data/1000genomes/Phase3/plink/ \n",
+                "plink --bfile ", bfile, " --extract ", snp_file, " --make-bed --out ", out))
+}
+
+write.table(paste0(ref_dir,
+                   "hapmap3_CEU.CHB.JPT.YRI.no-at-cg-snps_",
+                   paste0("chr", 1:22)),
+            file=paste0(ref_dir, "merge_list.txt"),
+            sep="\n", col.names = F, row.names = F, quote = F)
+
+out <- paste0(ref_dir,
+                "hapmap3_CEU.CHB.JPT.YRI.no-at-cg-snps")
+system(paste0("plink --merge-list ",
+              ref_dir, "merge_list.txt",
+              " --make-bed --out ", out))
+system(paste0("cp ", out, ".bim ", out, "2.bim"))
+bim <- read.table(paste0(out, "2.bim"),
+                  h = F, stringsAsFactors = F)
+
+bim$V2 <- paste(gsub("\\:.*", "", bim$V2), bim$V5, bim$V6, sep = ":")
+write.table(bim,
+            file = paste0(out, ".bim"),
+            row.names = F, col.names = F,
+            sep = "\t", quote = F)
+
+
+map <- read.table(paste0(get.path("genotype", local),
+                         "AFHRI-B_imputed.bim"),
+                  h = F, stringsAsFactors = F)
+map$rsID <- NA
+map$rsID[grep("rs", map$V2)] <- gsub("\\:.*", "", map$V2[grep("rs", map$V2)])
+map$rsID2 <- NA
+map$rsID2[grep("rs", map$V2)] <- paste(map$rsID[grep("rs", map$V2)],
+                                       map$V5[grep("rs", map$V2)],
+                                       map$V6[grep("rs", map$V2)],
+                                       sep = ":")
+map$rsID3 <- NA
+map$rsID3[grep("rs", map$V2)] <- paste(map$rsID[grep("rs", map$V2)],
+                                       map$V6[grep("rs", map$V2)],
+                                       map$V5[grep("rs", map$V2)],
+                                       sep = ":")
+head(map)
+head(bim)
+
+s1 <- sum(bim$V2 %in% map$rsID2)
+s1
+s2 <- sum(bim$V2 %in% map$rsID3)
+s2
+s3 <- sum((bim$V2 %in% map$rsID2) & (bim$V2 %in% map$rsID3))
+s3
+sum(s1+s2)/dim(bim)[1]
+
+map$ID <- NA
+map$ID[map$rsID2 %in% bim$V2] <- map$rsID2[map$rsID2 %in% bim$V2]
+map$ID[map$rsID3 %in% bim$V2] <- map$rsID3[map$rsID3 %in% bim$V2]
+
+snp_file2 <- paste0(ref_dir, "AFHRI_hapmap3_CEU.CHB.JPT.YRI.no-at-cg-snps.txt")
+write.table(map[map$ID %in% bim$V2, c("V2", "ID")],
+            file=snp_file2,
+            sep="\t", col.names = F, row.names = F, quote = F)
+bfile <- paste0(get.path("genotype", local),
+                "AFHRI-B_imputed")
+outfile <- paste0(get.path("genotype", local),
+                "AFHRI-B_imputed_hapmap3_CEU.CHB.JPT.YRI.no-at-cg-snps")
+system(paste0("plink --bfile ", bfile,
+              " --extract ", snp_file2,
+              " --update-name ", snp_file2,
+              " --make-bed ",
+              " --out ", outfile))
+
+b1 <- paste0(ref_dir,
+             "hapmap3_CEU.CHB.JPT.YRI.no-at-cg-snps")
+b2 <- paste0(get.path("genotype", local),
+             "AFHRI-B_imputed_hapmap3_CEU.CHB.JPT.YRI.no-at-cg-snps")
+out <- paste0(get.path("genotype", local),
+             "AFHRI-B_hapmap3_CEU.CHB.JPT.YRI.no-at-cg-snps_merge")
+system(paste0("plink --bfile ", b1,
+              " --bmerge ", b2, ".bed ", b2, ".bim ", b2, ".fam ",
+              " --make-bed --recodeA --pca --out ", out))
+
+bfile <- paste0(get.path("genotype", local),
+             "AFHRI-B_hapmap3_CEU.CHB.JPT.YRI.no-at-cg-snps_merge")
+out <- paste0(get.path("genotype", local),
+             "AFHRI-B_population_pca")
+system(paste0("plink --bfile ", bfile,
+              " --pca --out ", out))
+```
+
+## Population structure by PCA
+
+### All ancestries
+```{r}
+pop <- read.table(paste0(get.path("genotype", local),
+                         "integrated_call_samples_v3.20130502.ALL.panel"),
+                  h = T, stringsAsFactors = F)
+eigen.val <- read.table(file = paste0(get.path("genotype", local),
+                                "AFHRI-B_population_pca.eigenval"),
+             stringsAsFactors = F)
+eigen.val$PC <- c(1:20)
+pca <- read.table(file = paste0(get.path("genotype", local),
+                                "AFHRI-B_population_pca.eigenvec"),
+             stringsAsFactors = F)[, -1]
+colnames(pca) <- c("sample", paste0("PC", 1:20))
+df <- merge(pca, pop,
+            all.x = T)
+df$pop[grep("SYM", df$sample)] <- "GER"
+df$super_pop[grep("SYM", df$sample)] <- "EUR"
+df$pop2 <- df$super_pop
+df$pop2[df$super_pop=="EUR"] <- df$pop[df$super_pop=="EUR"]
+df$pop2[grep("SYM", df$sample)] <- "AFHRI"
+
+```
+
+```{r}
+ggplot(eigen.val, aes(x=PC, y=V1)) +
+  geom_bar(stat = "identity") +
+  theme_bw()
+#barplot(eigen.val$V1)
+```
+
+```{r}
+ggplot(df, aes(x=PC1, y=PC2, shape=super_pop, col=pop2)) +
+  geom_point() +
+  theme_bw() +
+  ggtitle("Genotype PCA for AFHRI with all 1000 genomes samples")
+```
+
+```{r, eval=F}
+eur.samples.file <- paste0(get.path("genotype", local),
+                          "AFHRI-B_hapmap3_CEU.CHB.JPT.YRI_EUR_samples.txt")
+write.table(df[df$super_pop=="EUR", c("sample", "sample")],
+            file = eur.samples.file,
+            row.names = F, col.names = F, quote = F, sep = "\t")
+bfile <- paste0(get.path("genotype", local),
+             "AFHRI-B_hapmap3_CEU.CHB.JPT.YRI.no-at-cg-snps_merge")
+out <- paste0(get.path("genotype", local),
+              "AFHRI-B_EUR_population_pca")
+system(paste0("plink --bfile ", bfile,
+              " --keep ", eur.samples.file,
+              " --pca --out ", out))
+```
+
+### Restriction to European populations
+
+```{r}
+eigen.val.eur <- read.table(paste0(get.path("genotype", local),
+                             "AFHRI-B_EUR_population_pca.eigenval"),
+                      h = F)
+eigen.val.eur$PC <- c(1:20)
+
+pca.eur <- read.table(paste0(get.path("genotype", local),
+                             "AFHRI-B_EUR_population_pca.eigenvec"),
+                      h = F)[,-1]
+colnames(pca.eur) <- c("sample", paste0("EUR_PC", 1:20))
+
+df <- merge(df, pca.eur,
+            all = T)
+```
+
+```{r}
+ggplot(eigen.val.eur, aes(x=PC, y=V1)) +
+  geom_bar(stat = "identity") +
+  theme_bw()
+```
+
+```{r}
+ggplot(df[df$super_pop=="EUR", ],
+       aes(x=EUR_PC1, y=EUR_PC2, shape=pop, col=pop2)) +
+  geom_point() +
+  theme_bw() +
+  ggtitle("Genotype PCA for AFHRI cohort only on European samples")
+```
+
+### Response letter figure
+```{r, fig.width=12, fig.height=8}
+ggarrange(
+  ggarrange(
+    ggplot(df, aes(x=PC1, y=PC2,
+                   shape=super_pop, col=pop2)) +
+      geom_point() +
+      theme_bw() +
+      theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+            legend.position = "bottom") +
+      labs(title = "Genotype PCA for the AFHRI cohort\n(all 1000 genomes samples)",
+           x = "Principal component 1", y = "Principal component 2",
+           col = "", shape = ""),
+    ggplot(df[df$super_pop=="EUR", ],
+           aes(x=EUR_PC1, y=EUR_PC2,
+               shape=pop, col=pop2)) +
+      geom_point() +
+      theme_bw() +
+      theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+            legend.position = "bottom") +
+      labs(title = "Genotype PCA for AFHRI cohort\n(only on European samples)",
+           x = "Principal component 1", y = "Principal component 2",
+           col = "", shape = ""),
+    nrow = 1, ncol = 2,
+    common.legend = F
+  ),
+  ggarrange(
+  ggplot(eigen.val, aes(x=PC, y=V1)) +
+    geom_bar(stat = "identity") +
+    labs(title = "AFHRI cohort and all 1000 genomes samples",
+         x = "Principal component (PC)",
+         y = "Eigenvalue (per PC)") +
+    ylim(c(0,250)) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+  ggplot(eigen.val.eur, aes(x=PC, y=V1)) +
+    geom_bar(stat = "identity") +
+    labs(title = "AFHRI cohort and European samples",
+         x = "Principal component (PC)",
+         y = "Eigenvalue (per PC)") +
+    ylim(c(0,250)) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+  nrow = 1, ncol = 2
+  ),
+  heights = c(2, 1),
+  nrow = 2, ncol = 1
+)
+```
+
+

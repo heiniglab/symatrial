@@ -20,14 +20,83 @@ mygray <- "#C6DDEA"
 col.paired <- brewer.pal(n = 11, "Paired")
 col.set <- col.paired[c(2,8,9)]
 
+# Load data
 gmt <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c5.bp.v6.1.symbols.gmt.txt")
-set.seed(1111)
+set.seed(1234)
+
+## Get genotypes for SNPs with cis-QTLs
+library(plyr)
+e.clump <- readRDS(file = paste0(get.path("results", local),
+                                 "imputed/cis/eQTL_clump_relaxed.RDS"))
+p.clump <- readRDS(file = paste0(get.path("results", local),
+                                 "imputed/cis/pQTL_clump_relaxed.RDS"))
+rese.clump <- readRDS(file = paste0(get.path("results", local),
+                                    "imputed/cis/res_eQTL_clump_relaxed.RDS"))
+resp.clump <- readRDS(file = paste0(get.path("results", local),
+                                    "imputed/cis/res_pQTL_clump_relaxed.RDS"))
+ratio.clump <- readRDS(file = paste0(get.path("results", local),
+                                     "imputed/cis/ratioQTL_clump_relaxed.RDS"))
+
+e.clump2 <- ldply(e.clump[["FDR"]], data.frame)
+p.clump2 <- ldply(p.clump[["FDR"]], data.frame)
+rese.clump2 <- ldply(rese.clump[["FDR"]], data.frame)
+resp.clump2 <- ldply(resp.clump[["FDR"]], data.frame)
+ratio.clump2 <- ldply(ratio.clump[["FDR"]], data.frame)
+clump <- rbind(data.frame(omic = "eQTL",
+                          gene = e.clump2$.id,
+                          e.clump2,
+                          stringsAsFactors = F),
+               data.frame(omic = "pQTL",
+                          gene = p.clump2$.id,
+                          p.clump2,
+                          stringsAsFactors = F),
+               data.frame(omic = "res_eQTL",
+                          gene = rese.clump2$.id,
+                          rese.clump2,
+                          stringsAsFactors = F),
+               data.frame(omic = "res_pQTL",
+                          gene = resp.clump2$.id,
+                          resp.clump2,
+                          stringsAsFactors = F),
+               data.frame(omic = "ratioQTL",
+                          gene = ratio.clump2$.id,
+                          ratio.clump2,
+                          stringsAsFactors = F))
+
+if(F){
+  geno <- paste0(get.path("genotype", local),
+                 "AFHRI_B_imputed_preprocessed_genotypes.txt")
+  geno2 <- paste0(get.path("genotype", local),
+                  "cis_eQTL_pQTL_sentinel_SNPs.txt")
+  sent.snps <- c("imputed_marker_id", unique(clump$SNP))
+  tmp <- tempfile()
+  write.table(sent.snps,
+              file = tmp,
+              row.names = F, col.names = F,
+              sep = "\n", quote = F)
+  system(paste("awk 'FNR==NR { a[$1]; next } $1 in a'", tmp, geno,
+               ">", geno2, sep=" "))
+}
 
 scores <- readRDS(paste0(get.path("dataset", local),
                          "risk_score/GPS_scores_EUR_AFHRI-B.RDS"))
 scores$AF_Status <- factor(scores$AF_Status, levels = c(0,1,2), labels = c("ctrl", "preOP AF", "only postOP AF"))
 scores$fibro.score.imp.prot.meta <- NULL
 scores <- scores[!duplicated(scores), ]
+rownames(scores) <- scores$externID2
+
+cis.genos <- read.table(geno2,
+                        h = T, stringsAsFactors = F)
+map.snp <- data.frame(snpid = cis.genos$imputed_marker_id,
+                      stringsAsFactors = F)
+rownames(cis.genos) <- cis.genos$imputed_marker_id
+cis.genos$imputed_marker_id <- NULL
+cis.genos <- data.frame(t(cis.genos))
+map.snp$colid <- colnames(cis.genos)
+cis.genos$externID2 <- rownames(cis.genos)
+
+scores <- merge(scores, cis.genos,
+                all.x = T)
 rownames(scores) <- scores$externID2
 
 expr <- readRDS(file=paste0(get.path("dataset", local),
@@ -55,14 +124,14 @@ tpm.aa$highly.expressed <- as.numeric(log(tpm.aa$meanExpr+1) > cutoff)
 tpm.aa2 <- tpm.aa[!duplicated(tpm.aa$Description), c("Description", "meanExpr", "AFHRIB", "highly.expressed")]
 tpm.aa2 <- tpm.aa2[!is.na(tpm.aa2$AFHRIB), ]
 
+# QTS computations -------------------------------------------------------------
+## Transcriptomics eQTS --------------------------------------------------------
+# eQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/RIN + cis SNPs
+out.dir <- paste0(get.path("results", local),
+                  "imputed/trans/eQTS_cis/")
+dir.create(out.dir, recursive = T, showWarnings = F)
 
-
-# Transcriptomics eQTS ---------------------------------------------------------
-## eQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/RIN --------------------
-
-eQTS.file <- paste0(get.path("results", local),
-                    "imputed/trans/eQTS/",
-                    "eQTS_percAF_covs_RIN.RDS")
+eQTS.file <- paste0(out.dir, "eQTS_percAF_covs_RIN_cis_eQTLs.RDS")
 if(!file.exists(eQTS.file)){
   texpr <- readRDS(paste0(get.path("dataset", local),
                           "AFHRI_B_transcriptomics_QC_symbol.RDS"))
@@ -71,10 +140,11 @@ if(!file.exists(eQTS.file)){
   tpheno$externID2 <- sub(".RAA", "", tpheno$externID)
   covs <- c("age", "sex", "BMI", "sysBP", "CRP", "NTproBNP", "RIN")
   tpheno2 <- merge(tpheno[, c("externID", "externID2", covs)],
-                   scores[, c("externID2", "AF.GPS", "percentile.AF")],
+                   scores[, c("externID2", "AF.GPS", "percentile.AF", map.snp[, "colid"])],
                    all.x = T)
   tpheno2 <- tpheno2[!duplicated(tpheno2), ]
-  tpheno3 <- tpheno2[complete.cases(tpheno2), ]
+  tpheno3 <- tpheno2[complete.cases(tpheno2[, c("externID", "externID2", covs,
+                                                "externID2", "AF.GPS", "percentile.AF")]), ]
   tpheno3$expr <- NA
   tpheno3$res <- NA
   df <- tpheno3
@@ -88,9 +158,18 @@ if(!file.exists(eQTS.file)){
   for (i in 1:(dim(texpr)[1])){
     #i=1
     id <- rownames(texpr)[i]
+    # id <- "A4GALT"
     df$expr <- as.numeric(texpr[id, df$externID])
-    lmres <- lm(expr ~ percentile.AF + age + sex + BMI + sysBP + CRP + NTproBNP + RIN,
-                data = df)
+    cis.snps <- map.snp[clump[clump$omic == "mRNA" & clump$gene == id, "SNP"], "colid"]
+    if(length(cis.snps)>0){
+      model <- paste("expr ~ percentile.AF + age + sex + BMI + sysBP + CRP + NTproBNP + RIN",
+                     paste(cis.snps, collapse = " + "), sep = " + ")
+      lmres <- lm(as.formula(model),
+                  data = df)
+    } else {
+      lmres <- lm(expr ~ percentile.AF + age + sex + BMI + sysBP + CRP + NTproBNP + RIN,
+                  data = df)
+    }
     res.eQTS[id, ] <- c(id, dim(lmres$model)[1], lmres$df.residual,
                         summary(lmres)$coefficients["percentile.AF", ],
                         NA)
@@ -133,44 +212,14 @@ signif(top.table.trans[order(top.table.trans$tvalue, decreasing=T),
                        c("Estimate", "tvalue", "pvalueT")],
        digits = 3)
 
+## Proteomics pQTS -------------------------------------------------------------
+# pQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/prot.conc + cis SNPs
 
-# GSEA on eQTS -----------------------------------------------------------------
-## GSEA on eQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/RIN ------------
+out.dir <- paste0(get.path("results", local),
+                  "imputed/trans/pQTS_cis/")
+dir.create(out.dir, recursive = T, showWarnings = F)
 
-fgsea.eQTS.file <- paste0(get.path("results", local),
-                          "imputed/trans/eQTS/",
-                          "fgsea_eQTS_percAF_covs_RIN.RDS")
-if(!file.exists(fgsea.eQTS.file)){
-  
-  fgsea.eQTS <- NULL
-  eQTS.file <- paste0(get.path("results", local),
-                      "imputed/trans/eQTS/",
-                      "eQTS_percAF_covs_RIN.RDS")
-  
-  eQTS <- readRDS(eQTS.file)
-  
-  rank <- eQTS[which(eQTS$highly.expressed==1), "tvalue"]
-  names(rank) <- eQTS[which(eQTS$highly.expressed==1), "id"]
-  fgsea.eQTS[["GObp_high"]] <- fgsea(gmt,
-                                     rank,
-                                     nperm=100000,
-                                     minSize = 15,
-                                     maxSize=500)
-  fgsea.eQTS[["GObp_high"]] <- fgsea.eQTS[["GObp_high"]][order(fgsea.eQTS[["GObp_high"]]$pval), ]
-  
-  fgsea.eQTS[["significant"]] <- fgsea.eQTS[["GObp_high"]][fgsea.eQTS[["GObp_high"]]$padj<0.05, ]
-  fgsea.eQTS[["leadingEdge"]] <- data.frame(table(unlist(fgsea.eQTS[["significant"]]$leadingEdge)))
-  
-  saveRDS(fgsea.eQTS, file = fgsea.eQTS.file)
-} else {
-  fgsea.eQTS <- readRDS(fgsea.eQTS.file)
-}
-
-# Proteomics pQTS --------------------------------------------------------------
-## pQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/prot.conc --------------
-pQTS.file <- paste0(get.path("results", local),
-                    "imputed/trans/pQTS/",
-                    "pQTS_percAF_covs_conc.RDS")
+pQTS.file <- paste0(out.dir, "pQTS_percAF_covs_conc_cis_pQTLs.RDS")
 if(!file.exists(pQTS.file)){
   pexpr <- readRDS(paste0(get.path("dataset", local),
                           "AFHRI_B_proteomics_QC_symbol.RDS"))
@@ -179,10 +228,11 @@ if(!file.exists(pQTS.file)){
   ppheno$externID2 <- sub(".RAA", "", ppheno$externID)
   covs <- c("age", "sex", "BMI", "sysBP", "CRP", "NTproBNP", "Protein.c..ug.ul.")
   ppheno2 <- merge(ppheno[, c("externID", "externID2", covs)],
-                   scores[, c("externID2", "AF.GPS", "percentile.AF")],
+                   scores[, c("externID2", "AF.GPS", "percentile.AF", map.snp[, "colid"])],
                    all.x = T)
   ppheno2 <- ppheno2[!duplicated(ppheno2), ]
-  ppheno3 <- ppheno2[complete.cases(ppheno2), ]
+  ppheno3 <- ppheno2[complete.cases(ppheno2[, c("externID", "externID2", covs,
+                                                "externID2", "AF.GPS", "percentile.AF")]), ]
   ppheno3$expr <- NA
   df <- ppheno3
   
@@ -195,9 +245,19 @@ if(!file.exists(pQTS.file)){
   for (i in 1:(dim(pexpr)[1])){
     #i=1
     id <- rownames(pexpr)[i]
+    # id <- "A4GALT"
     df$expr <- as.numeric(pexpr[id, df$externID])
-    lmres <- lm(expr ~ percentile.AF + age + sex + BMI + sysBP + CRP + NTproBNP + Protein.c..ug.ul.,
-                data = df)
+    cis.snps <- map.snp[clump[clump$omic == "protein" & clump$gene == id, "SNP"], "colid"]
+    if(length(cis.snps)>0){
+      model <- paste("expr ~ percentile.AF + age + sex + BMI + sysBP + CRP + NTproBNP + Protein.c..ug.ul.",
+                     paste(cis.snps, collapse = " + "), sep = " + ")
+      lmres <- lm(as.formula(model),
+                  data = df)
+    } else {
+      lmres <- lm(expr ~ percentile.AF + age + sex + BMI + sysBP + CRP + NTproBNP + Protein.c..ug.ul.,
+                  data = df)
+    }
+    
     res.pQTS[id, ] <- c(id, dim(lmres$model)[1], lmres$df.residual,
                         summary(lmres)$coefficients["percentile.AF", ],
                         NA)
@@ -233,18 +293,55 @@ signif(top.table.prot[, c("Estimate", "tvalue", "pvalueT", "padjT", "padjT.highl
        digits = 3)
 
 
-# GSEA on pQTS -----------------------------------------------------------------
-## GSEA on pQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/prot.conc ------
+## GSEA for QTS ----------------------------------------------------------------
+### GSEA on eQTS ---------------------------------------------------------------
+# GSEA on eQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/RIN + cis SNPs
+out.dir <- paste0(get.path("results", local),
+                  "imputed/trans/eQTS_cis/")
+fgsea.eQTS.file <- paste0(out.dir,
+                          "fgsea_eQTS_percAF_covs_RIN_cis_eQTLs.RDS")
+if(!file.exists(fgsea.eQTS.file)){
+  
+  fgsea.eQTS <- NULL
+  # eQTS.file <- paste0(out.dir,
+  #                     "eQTS_percAF_covs_RIN_cis_eQTLs.RDS")
+  eQTS <- readRDS(eQTS.file)
+  
+  rank <- eQTS[, "tvalue"]
+  names(rank) <- eQTS[, "id"]
+  fgsea.eQTS[["GObp_all"]] <- fgsea(gmt,
+                                    rank,
+                                    nperm=100000,
+                                    minSize = 15,
+                                    maxSize=500)
+  fgsea.eQTS[["GObp_all"]] <- fgsea.eQTS[["GObp_all"]][order(fgsea.eQTS[["GObp_all"]]$pval), ]
+  fgsea.eQTS[["significant"]] <- fgsea.eQTS[["GObp_all"]][fgsea.eQTS[["GObp_all"]]$padj<0.05, ]
+  fgsea.eQTS[["leadingEdge"]] <- data.frame(table(unlist(fgsea.eQTS[["significant"]]$leadingEdge)))
+  
+  saveRDS(fgsea.eQTS, file = fgsea.eQTS.file)
+} else {
+  fgsea.trans <- readRDS(fgsea.eQTS.file)[["GObp_all"]]
+}
 
-fgsea.pQTS.file <- paste0(get.path("results", local),
-                          "imputed/trans/pQTS/",
-                          "fgsea_pQTS_percAF_covs_conc.RDS")
+lead.trans <- as.data.frame(table(unlist(fgsea.trans[fgsea.trans$padj<0.05,
+                                                     "leadingEdge"])),
+                            stringsAsFactors=F)
+
+le.trans <- lead.trans[order(lead.trans$Freq, decreasing = T)[1:23], ]
+le.trans
+
+
+## GSEA on pQTS ----------------------------------------------------------------
+# GSEA on pQTS lm percentile.AF age/sex/BMI/sysBP/CRP/NTproBNP/prot.conc + cis SNPs
+out.dir <- paste0(get.path("results", local),
+                  "imputed/trans/pQTS_cis/")
+fgsea.pQTS.file <- paste0(out.dir,
+                          "fgsea_pQTS_percAF_covs_conc_cis_pQTLs.RDS")
 if(!file.exists(fgsea.pQTS.file)){
   
   fgsea.pQTS <- NULL
-  pQTS.file <- paste0(get.path("results", local),
-                      "imputed/trans/pQTS/",
-                      "pQTS_percAF_covs_conc.RDS")
+  # pQTS.file <- paste0(out.dir,
+  #                     "pQTS_percAF_covs_conc_cis_pQTLs.RDS")
   
   pQTS <- readRDS(pQTS.file)
   
@@ -271,6 +368,13 @@ if(!file.exists(fgsea.pQTS.file)){
   
   saveRDS(fgsea.pQTS, file = fgsea.pQTS.file)
 } else {
-  fgsea.pQTS <- readRDS(fgsea.pQTS.file)
+  fgsea.prot <- readRDS(fgsea.pQTS.file)[["GObp_all"]]
 }
+
+lead.prot <- as.data.frame(table(unlist(fgsea.prot[fgsea.prot$padj<0.05,
+                                                   "leadingEdge"])),
+                           stringsAsFactors=F)
+
+lead.prot$Var1
+
 

@@ -140,10 +140,54 @@ pexpr <- readRDS(paste0(get.path("dataset", local),
                         "AFHRI_B_proteomics_QC_symbol.RDS"))
 genes <- unique(rownames(texpr), rownames(pexpr))
 
-gtex.genes <- read.csv(paste0(get.path("gtex", local),
-                              "GTEx_Analysis_2016-01-15_v7_RNASeQCv1.1.8_gene_median_tpm.gct"),
-                       header = T, stringsAsFactors = F, skip = 2, sep = "\t")
-gtex.genes$gene_id_sub <- gsub("\\..*", "", gtex.genes$gene_id)
+
+gtex.genes1a <- read.csv(paste0(get.path("gtex", local),
+                                "GTEx_Analysis_2016-01-15_v7_RNASeQCv1.1.8_gene_median_tpm.gct"),
+                         header = T, stringsAsFactors = F, skip = 2, sep = "\t")[, c("gene_id", "Description")]
+gtex.genes1a$gene_id_sub <- gsub("\\..*", "", gtex.genes1a$gene_id)
+gtex.genes1b <- read.csv(paste0(get.path("gtex", local),
+                                "Heart_Atrial_Appendage.v7.normalized_expression.bed"),
+                         header = T, stringsAsFactors = F, sep = "\t")[, c("gene_id", "gene_id")]
+colnames(gtex.genes1b) <- c("gene_id", "gene_id_sub")
+gtex.genes1b$gene_id_sub <- gsub("\\..*", "", gtex.genes1b$gene_id)
+gtex.genes1 <- merge(gtex.genes1a, gtex.genes1b,
+                     all = T)
+
+gtex.genes2a <- read.csv(paste0("~/work/symAtrial_QTL/data/current//gtex/v8/",
+                                "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct"),
+                         header = T, stringsAsFactors = F, skip = 2, sep = "\t")[, c("Name", "Description")]
+gtex.genes2a$gene_id <- gtex.genes2a$Name
+gtex.genes2a$gene_id_sub <- gsub("\\..*", "", gtex.genes2a$Name)
+gtex.genes2a$Name <- NULL
+gtex.genes2b <- read.csv(paste0("~/work/symAtrial_QTL/data/current//gtex/v8/",
+                                "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct"),
+                         header = T, stringsAsFactors = F, sep = "\t", skip = 2)[, c("Name", "Description")]
+gtex.genes2b$gene_id <- gtex.genes2b$Name
+gtex.genes2b$gene_id_sub <- gsub("\\..*", "", gtex.genes2b$Name)
+gtex.genes2b$Name <- NULL
+gtex.genes2 <- merge(gtex.genes2a, gtex.genes2b,
+                     all = T)
+
+gtex.genes <- merge(gtex.genes1[, c("gene_id_sub", "gene_id")],
+                    gtex.genes2[, c("gene_id_sub", "gene_id")],
+                    by = c("gene_id_sub"),
+                    suffixes = c(".v7", ".v8"),
+                    all = T)
+gtex.genes <- merge(gtex.genes,
+                    gtex.genes2[!is.na(gtex.genes2$Description), c("gene_id_sub", "Description")],
+                    by = c("gene_id_sub"),
+                    all = T)
+gtex.genes <- merge(gtex.genes,
+                    gtex.genes1[!is.na(gtex.genes1$Description), c("gene_id_sub", "Description")],
+                    by = c("gene_id_sub", "Description"),
+                    all = T)
+gtex.genes <- gtex.genes[!duplicated(gtex.genes), ]
+
+# gtex.anno <- merge(data.frame(symbol=genes,
+#                                stringsAsFactors = F),
+#                    gtex.genes,
+#                     by.x = "symbol", by.y = "Description",
+#                     all = T)
 
 library(biomaRt)
 genesQTL <- readRDS("genes_QTL_temp.RDS")
@@ -169,26 +213,32 @@ saveRDS(anno,
                     "ensembl_ids_AFHRIB_QTLgenes.RDS"))
 # anno <- readRDS(paste0(get.path("locations", local),
 #                        "ensembl_ids_AFHRIB_QTLgenes.RDS"))
-anno2 <- merge(anno, gtex.genes[, c("gene_id", "gene_id_sub", "Description")],
+anno2 <- merge(anno[complete.cases(anno[, c("ensembl_gene_id", "external_gene_name")]),
+                    c("ensembl_gene_id", "external_gene_name")],
+               gtex.genes[complete.cases(gtex.genes[, c("gene_id_sub", "Description")]),
+                          c("gene_id_sub", "Description")],
                by.x=c("ensembl_gene_id", "external_gene_name"),
                by.y=c("gene_id_sub", "Description"),
                all = T)
-anno2 <- anno2[!duplicated(anno2[, c("ensembl_gene_id", "external_gene_name")]),
-               c("ensembl_gene_id", "gene_id", "external_gene_name")]
-colnames(anno2) <- c("ensembl_gene_id", "gene_id", "symbol")
-saveRDS(anno2,
-        file=paste0(get.path("locations", local),
-                    "GTEx_ensembl_ids_AFHRIB_genes.RDS"))
+anno2 <- merge(anno2,
+               gtex.genes[, c("gene_id_sub", "gene_id.v7", "gene_id.v8")],
+               by.x=c("ensembl_gene_id"),
+               by.y=c("gene_id_sub"),
+               all = T)
+anno2 <- anno2[!duplicated(anno2), ]
+colnames(anno2) <- c("ensembl_gene_id", "symbol", "gene_id.v7", "gene_id.v8")
+test <- genesQTL$symbol[!(genesQTL$symbol %in% anno2$symbol)]
+
 anno3 <- anno2[anno2$symbol %in% genesQTL$symbol, ]
+
 saveRDS(anno3,
         file=paste0(get.path("locations", local),
                     "GTEx_ensembl_ids_AFHRIB_QTLgenes.RDS"))
-write.table(data.frame(gene_id=anno2$gene_id[anno2$symbol %in% genesQTL$symbol],
+write.table(data.frame(gene_id=unique(anno2$gene_id.v7[anno2$symbol %in% genesQTL$symbol]),
                        stringsAsFactors = F),
             file=paste0(get.path("gtex", local),
                         "gtex_genes_in_afhrib.txt"),
             row.names = F, col.names = T, quote = F)
-
 
 # filter gtex file for AFHRI-B SNPs and then genes
 gtex.file <- paste0(get.path("gtex", local),

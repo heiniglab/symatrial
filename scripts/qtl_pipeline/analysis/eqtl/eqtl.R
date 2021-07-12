@@ -44,17 +44,20 @@ eqtl.single <- function(expression_file, genotype, snplocs, genelocs, model, out
 }
 
 eqtls <- function(expression_file, genotype, snplocs, genelocs, model, outdir, covariate_dir, trans=F){
-  # expression_file=paste(peer_path, norm_sd, type, file, sep="/")
-  # genotype = geno
-  # snplocs = path2snplocs
-  # genelocs = path2genelocs
-  # model = model
-  # outdir = paste(get.path("results"), "imputed", "cis", model, type, norm_sd, cov_sd, sep = "/")
-  # covariate_dir = paste(peer_path, norm_sd, type, cov_sd, sep="/")
-  # trans=trans
-  files <- list.files(path=covariate_dir, pattern=".*peer_factors_.*.txt", full.names=T, recursive=FALSE)
 
+  if(is.null(files)){
+    files <- list.files(path=covariate_dir, pattern=".*peer_factors_.*.txt", full.names=T, recursive=FALSE)
+  }
+  
   library(MatrixEQTL)
+  
+  print("Running QTL analysis for:")
+  print(paste0("Genotype file:", genotype))
+  print(paste0("Expression file:", expression_file))
+  print(paste0("SNP locs file:", snplocs))
+  print(paste0("Gene locs file:", genelocs))
+  print("Covariate files:")
+  print(files)
   
   # Genotype file name
   SNP_file_name = genotype
@@ -90,10 +93,12 @@ eqtls <- function(expression_file, genotype, snplocs, genelocs, model, outdir, c
   # read file in slices of 2,000 rows
   gene$LoadFile(expression_file)
   
-  if (is.na(genelocs)){
-    mqtl(gene, snps, model, outdir, "no peer")
-  }else{
-    eqtl(gene, snps, snplocs, genelocs, model, outdir, "no peer", trans)
+  if(!file.exists(paste0(covariate_dir, "/peer_factors_nk00.txt"))){
+    if (is.na(genelocs)){
+      mqtl(gene, snps, model, outdir, "no peer")
+    }else{
+      eqtl(gene, snps, snplocs, genelocs, model, outdir, "no peer", trans)
+    }
   }
   
   #eqtl(gene, snps, snplocs, genelocs, model, outdir, paste0(covariate_dir, "peer_factors_nk01.txt"))
@@ -102,177 +107,175 @@ eqtls <- function(expression_file, genotype, snplocs, genelocs, model, outdir, c
     lapply(files, function(x){
       try(mqtl(gene, snps, model, outdir, x))
     })
-    
   }else{
     lapply(files, function(x){
       tryCatch(eqtl(gene, snps, snplocs, genelocs, model, outdir, x, trans),error=function(e) NULL)
     })
-    
   }
-  # if(tables=F){
-  #   source("analysis/peer_tables/me_analyze.R")
-  #   source("helper/helper.R")
-  #   dir <- paste(get.path("results"), "current", "cis", model, type, norm_sd, cov_sd, sep="/")
-  #   outdir <- paste(get.path("results"), "current", "peer", model, type, norm_sd, cov_sd, sep="/")
-  #   
-  #   peer.write.table(dir, outdir)
-  # }
 }
 
 eqtl <- function(gene, genotype, snplocs, genelocs, model, outdir, covariate_file = character(), trans = F, of = F) {
   tryCatch({
-  library(MatrixEQTL)
-  source("helper/helper.R")
-
-  
-  
-  if(covariate_file == "no peer") {
-    out <- "nk00"
-    covariate_file <- character()
-  } else {
-    out <- get.filename(covariate_file)
-    out <- strsplit(out, ".", fixed = T)
-    out <- strsplit(out[[1]][1], "_", fixed = T)[[1]][3]
-  }
-  
-  outfile <- paste0(outdir , "/eqtl_", out, ".RDS")
-  
-  if(of) {
-    outfile <- outdir
-  } else {
-    dir.create(outdir, showWarnings=F, recursive=T)
-  }
-  
-  # Linear model to use
-  '%nin%' <- Negate('%in%')
-  if(model == "linear"){
-    useModel = modelLINEAR  
-  }
-  if(model == "anova"){
-    useModel = modelANOVA
-  }
-  if(model %nin% c("linear", "anova")){
-    stop(paste0("'",model, "'", " is no valid model."))
-  }
-  
-  # Covariates file name
-  covariates_file_name = covariate_file
-  
-  # Only associations significant at this level will be saved
-  pvOutputThreshold_cis = 1
-  
-  # pvOutputThreshold_tra = 1e-2; # -> rds 02
-  pvOutputThreshold_tra = 0 # -> rds01
-  if (trans) {pvOutputThreshold_tra = 1e-2}
-  
-  # Error covariance matrix
-  errorCovariance = numeric()
-  
-  
-  # Distance for local gene-SNP pairs
-  cisDist = 1e6
-  
-  
-  # You can also have a look at:
-  # library(MatrixEQTL)
-  # ?MatrixEQTL_cis_code
-  
-  
-  ## Settings
-  
-
-  
-  snps_location_file_name = snplocs
-  
-  
-  gene_location_file_name = genelocs
-  
-  
-  # Output file name
-  output_file_name_cis = paste0(outdir , "/eqtl_", out, "_cis.txt") # tempfile() tempfile() #
-  
-  output_file_name_tra = paste0(outdir , "/eqtl_", out, "_trans.txt") # tempfile()
-  
-  
-  ## Genotype data
-
-  snps <- genotype
-  
-  
-  
-  ## Load covariates
-  cvrt = SlicedData$new()
-  
-  cvrt$fileDelimiter = "\t"
-  # the TAB character
-  cvrt$fileOmitCharacters = "NA"
-  # denote missing values;
-  cvrt$fileSkipRows = 1
-  # one row of column labels
-  cvrt$fileSkipColumns = 1
-  # one column of row labels
-  if (length(covariates_file_name) > 0) {
-    cvrt$LoadFile(covariates_file_name)
+    library(MatrixEQTL)
+    source("helper/helper.R")
     
-  }
-  
-  ## Run the analysis
-  snpspos = read.table(snps_location_file_name,
-                       header = TRUE,
-                       stringsAsFactors = FALSE)
-  
-  genepos = read.table(gene_location_file_name,
-                       header = TRUE,
-                       stringsAsFactors = FALSE)
-  
-  if(trans){
-    me = Matrix_eQTL_main(
-      snps = snps,
-      gene = gene,
-      cvrt = cvrt,
-      output_file_name = output_file_name_tra,
-      pvOutputThreshold = pvOutputThreshold_tra,
-      useModel = useModel,
-      errorCovariance = errorCovariance,
-      verbose = TRUE,
-      output_file_name.cis = output_file_name_cis,
-      pvOutputThreshold.cis = pvOutputThreshold_cis,
-      snpspos = snpspos,
-      genepos = genepos,
-      cisDist = cisDist,
-      pvalue.hist = "qqplot",
-      min.pv.by.genesnp = FALSE,
-      noFDRsaveMemory = FALSE
-    )
-    saveRDS(me, outfile)
-  }else{
-    me = Matrix_eQTL_main(
-      snps = snps,
-      gene = gene,
-      cvrt = cvrt,
-      output_file_name = output_file_name_tra,
-      pvOutputThreshold = pvOutputThreshold_tra,
-      useModel = useModel,
-      errorCovariance = errorCovariance,
-      verbose = TRUE,
-      output_file_name.cis = output_file_name_cis,
-      pvOutputThreshold.cis = pvOutputThreshold_cis,
-      snpspos = snpspos,
-      genepos = genepos,
-      cisDist = cisDist,
-      pvalue.hist = "qqplot",
-      min.pv.by.genesnp = FALSE,
-      noFDRsaveMemory = FALSE
-    )
-    saveRDS(me, outfile)
-  }
-
-  
-  
-  # unlink(output_file_name_tra)
-  # 
-  unlink(output_file_name_cis)
-  
+    print("Running QTL analysis for:")
+    print(paste0("Covariate file: ", covariate_file))
+    
+    if(covariate_file == "no peer") {
+      out <- "nk00"
+      covariate_file <- character()
+      print("Running QTL analysis with empty covariate file (no-peer and no covariate option)!")
+    } else {
+      out <- get.filename(covariate_file)
+      out <- strsplit(out, ".", fixed = T)
+      out <- strsplit(out[[1]][1], "_", fixed = T)[[1]][3]
+      print("Running QTL analysis with basic covariates but without any PEER factors!")
+    }
+    
+    outfile <- paste0(outdir , "/eqtl_", out, ".RDS")
+    
+    print(paste0("Outfile: ", outfile))
+    
+    if(!file.exists(outfile)){
+      if(of) {
+        outfile <- outdir
+      } else {
+        dir.create(outdir, showWarnings=F, recursive=T)
+      }
+      
+      # Linear model to use
+      '%nin%' <- Negate('%in%')
+      if(model == "linear"){
+        useModel = modelLINEAR  
+      }
+      if(model == "anova"){
+        useModel = modelANOVA
+      }
+      if(model %nin% c("linear", "anova")){
+        stop(paste0("'",model, "'", " is no valid model."))
+      }
+      
+      # Covariates file name
+      covariates_file_name = covariate_file
+      
+      # Only associations significant at this level will be saved
+      pvOutputThreshold_cis = 1
+      
+      # pvOutputThreshold_tra = 1e-2; # -> rds 02
+      pvOutputThreshold_tra = 0 # -> rds01
+      if (trans) {pvOutputThreshold_tra = 1e-2}
+      
+      # Error covariance matrix
+      errorCovariance = numeric()
+      
+      
+      # Distance for local gene-SNP pairs
+      cisDist = 1e6
+      
+      
+      # You can also have a look at:
+      # library(MatrixEQTL)
+      # ?MatrixEQTL_cis_code
+      
+      
+      ## Settings
+      
+      
+      
+      snps_location_file_name = snplocs
+      
+      
+      gene_location_file_name = genelocs
+      
+      
+      # Output file name
+      output_file_name_cis = paste0(tempfile(tmpdir = outdir), "eqtl_", out, "_cis.txt") # tempfile() tempfile() #
+      
+      output_file_name_tra = paste0(outdir , "/eqtl_", out, "_trans.txt") # tempfile()
+      
+      
+      ## Genotype data
+      
+      snps <- genotype
+      
+      
+      
+      ## Load covariates
+      cvrt = SlicedData$new()
+      
+      cvrt$fileDelimiter = "\t"
+      # the TAB character
+      cvrt$fileOmitCharacters = "NA"
+      # denote missing values;
+      cvrt$fileSkipRows = 1
+      # one row of column labels
+      cvrt$fileSkipColumns = 1
+      # one column of row labels
+      if (length(covariates_file_name) > 0) {
+        cvrt$LoadFile(covariates_file_name)
+        
+      }
+      
+      ## Run the analysis
+      snpspos = read.table(snps_location_file_name,
+                           header = TRUE,
+                           stringsAsFactors = FALSE)
+      
+      genepos = read.table(gene_location_file_name,
+                           header = TRUE,
+                           stringsAsFactors = FALSE)
+      
+      if(trans){
+        me = Matrix_eQTL_main(
+          snps = snps,
+          gene = gene,
+          cvrt = cvrt,
+          output_file_name = output_file_name_tra,
+          pvOutputThreshold = pvOutputThreshold_tra,
+          useModel = useModel,
+          errorCovariance = errorCovariance,
+          verbose = TRUE,
+          output_file_name.cis = output_file_name_cis,
+          pvOutputThreshold.cis = pvOutputThreshold_cis,
+          snpspos = snpspos,
+          genepos = genepos,
+          cisDist = cisDist,
+          pvalue.hist = "qqplot",
+          min.pv.by.genesnp = TRUE,
+          noFDRsaveMemory = FALSE
+        )
+        saveRDS(me, outfile)
+      }else{
+        me = Matrix_eQTL_main(
+          snps = snps,
+          gene = gene,
+          cvrt = cvrt,
+          output_file_name = output_file_name_tra,
+          pvOutputThreshold = pvOutputThreshold_tra,
+          useModel = useModel,
+          errorCovariance = errorCovariance,
+          verbose = TRUE,
+          output_file_name.cis = output_file_name_cis,
+          pvOutputThreshold.cis = pvOutputThreshold_cis,
+          snpspos = snpspos,
+          genepos = genepos,
+          cisDist = cisDist,
+          pvalue.hist = "qqplot",
+          min.pv.by.genesnp = TRUE,
+          noFDRsaveMemory = FALSE
+        )
+        saveRDS(me, outfile)
+      }
+      
+      # unlink(output_file_name_tra)
+      # 
+      unlink(output_file_name_cis)
+      
+    } else {
+      print(paste0("Outfile ", outfile, " already exists."))
+    }
+    
   },
   warning=function(e){
     message(e)
@@ -283,25 +286,6 @@ mqtl <- function(gene, genotype, model, outdir, covariate_file = character(), tr
   try({
     library(MatrixEQTL)
     source("helper/helper.R")
-    
-    # if(covariate_file == "no peer") {
-    #   out <- "nk00"
-    #   covariate_file <- character()
-    # } else {
-    #   out <- get.filename(covariate_file)
-    #   out <- strsplit(out, ".", fixed = T)
-    #   out <- strsplit(out[[1]][1], "_", fixed = T)[[1]][3]
-    # }
-    # 
-    # outfile <- paste0(outdir , "/eqtl_", out, ".RDS")
-    # 
-    # if(of) {
-    #   outfile <- outdir
-    # } else {
-    #   dir.create(outdir, showWarnings=F, recursive=T)
-    # }
-    
-    #covariate_file <- "no peer"
     
     if(covariate_file == "no peer") {
       out <- "nk00"
@@ -353,25 +337,11 @@ mqtl <- function(gene, genotype, model, outdir, covariate_file = character(), tr
     
     ## Settings
     
-    
-    
-    # snps_location_file_name = snplocs
-    # 
-    # 
-    # gene_location_file_name = genelocs
-    
-    
     # Output file name
     output_file_name = paste0(outdir , "/eqtl_", out, ".txt") # tempfile()
     
-    
     ## Genotype data
-    
     snps <- genotype
-    
-    
-    
-    
     
     ## Load covariates
     cvrt = SlicedData$new()
@@ -413,6 +383,3 @@ mqtl <- function(gene, genotype, model, outdir, covariate_file = character(), tr
   #   message(e)
   })
 }
-
-# # cis-eQTLs
-# show(me$cis$eqtls)

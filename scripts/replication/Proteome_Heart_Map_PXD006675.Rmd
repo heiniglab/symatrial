@@ -1,0 +1,722 @@
+---
+title: "Replication Proteome Heart Map (PXD006675)"
+author: "Ines Assum"
+date: \today
+graphics: yes
+header-includes:
+  \usepackage{graphicx, fancyhdr, multicol, xcolor}
+  \usepackage{sectsty, titling, lmodern}
+  \usepackage[T1]{fontenc}
+  \renewcommand*\familydefault{\sfdefault}
+  \definecolor{myblue}{RGB}{31, 120, 180}
+  \allsectionsfont{\color{myblue}}
+  \sectionfont{\color{myblue}\sectionrule{3ex}{0pt}{-1ex}{1pt}}
+  \pretitle{\begin{center}\LARGE\bfseries\color{myblue}}
+  \posttitle{\par\end{center}\vskip 0.5em}
+  \pagestyle{fancy}
+  \lhead{Ines Assum}
+  \rhead{\today}
+  \chead{PXD006675}
+output: 
+  pdf_document:
+    toc: FALSE
+    number_sections: TRUE
+---
+
+```{r setup, include=FALSE}
+options(width = 90)
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+```
+
+```{r}
+source("../helper/helper.R")
+local=F
+
+get.duplicates <- function(df, cols){
+  df2 <- data.frame(table(df[, cols]))
+  df2 <- df2[df2$Freq>1, ]
+  colnames(df2) <- c(cols, "Freq")
+  df <- merge(df,
+              df2[cols],
+              all.y=T)
+}
+
+library(ggplot2)
+library(ggpubr)
+library(RColorBrewer)
+library(pheatmap)
+library(dplyr)
+library(tidyr)
+
+HMGU.blue <- "#003E6E"
+mygray <- "#C6DDEA"
+myred <- "#C01514"
+col.paired <- brewer.pal(n = 11, "Paired")
+col.set <- col.paired[c(2,8,9)]
+
+anno.cols <- list(AF=c("ctrl" = "black",
+                       "AF" = myred),
+                  type=c("ventricle" = col.paired[2],
+                         "atrium" = col.paired[10]),
+                  region=c("right" = col.paired[3],
+                           "left" = col.paired[5]))
+
+medianNorm <- function(X, runs){
+  for (i in 1:length(levels(runs))) {
+    #i=2
+    run = levels(runs)[i]
+    # median normalize
+    med <- apply(X[runs==run,],2,function(c){median(c,na.rm=T)})
+    if(sum(as.numeric(med[complete.cases(med)]==0))){
+      print(paste0("Median 0 for metabolites ",
+                   colnames(X[runs==run,])[which(med==0)],
+                   " in Batch ",
+                   run))
+    }
+    if(sum(as.numeric(med[complete.cases(med)]==Inf))){
+      print(paste0("Median Inf for metabolites ",
+                   colnames(X[runs==run,])[which(med==Inf)],
+                   " in Batch ",
+                   run))
+    }
+    Xnorm = apply(X[runs==run,],2,function(c){c/median(c,na.rm=T)})
+    X[runs==run,] = Xnorm
+  }
+  dfcur = X
+}
+
+quantNorm <- function(data){ 
+  require(affy)									#load package unless it is already loaded
+  normalize.quantile <- get("normalize.quantiles",
+  					en=asNamespace("affy"))
+  quantile.data <- normalize.quantile(data)
+}
+```
+
+```{r}
+targets <- c("PPIF", "MYL4", "CKM", "MYL7", "PGAM2",
+             "TNNC1", "CYC1", "ETFB", "PRDX5",
+             "AK1", "ALDOA", "TCAP", "TOM1L2")
+# print("NKX2-5 targets:")
+# targets
+genes <- c("TNNT2", "NKX2-5",
+           "CYB5R3", "NDUFB3", "HIBADH", "NDUFA9", "DLAT",
+           "PPIF", "MYL4", "CKM", "MYL7", "PGAM2",
+           "TNNC1", "CYC1", "ETFB", "PRDX5",
+           "AK1", "ALDOA", "TCAP", "TOM1L2")
+
+genes.ev <- c("TNNT2*,++", "NKX2-5**",
+              "CYB5R3", "NDUFB3+", "HIBADH", "NDUFA9++", "DLAT",
+              "PPIF", "MYL4**,++", "CKM++", "MYL7", "PGAM2++", "TNNC1*",
+              "CYC1", "ETFB**,++", "PRDX5", "AK1", "ALDOA++", "TCAP*", "TOM1L2")
+targets.ev <- c("PPIF", "MYL4**,++", "CKM++", "MYL7", "PGAM2++", "TNNC1*",
+                "CYC1", "ETFB**,++", "PRDX5", "AK1", "ALDOA++", "TCAP*", "TOM1L2")
+
+fibro.genes <- c("ELN", "FGF10", "JAG1", "KIAA1199", "CPXM2", "FOSB",
+                 "FCRL2", "SCN7A", "NOV", "ARHGAP20", "CILP", "FRAS1",
+                 "DCDC2", "NRG1", "CLEC3B", "AFAP1L2", "COL14A1", "ITGBL1")
+print("Genes in fibrosis score: ")
+print(fibro.genes)
+```
+
+
+## Replication: Left atrium AF vs. healthy
+
+Data was downloaded from [PXD006675](https://www.ebi.ac.uk/pride/archive/projects/PXD006675). LFQ protein intensities were extracted using the file  
+`PXD006675/txtAFibNewSearch/proteinGroups.txt`
+
+```{r}
+n.targets <- c("NKX2-5", targets)
+lr <- c("LA3", "LA4", "LA8", "RA3", "RA4", "RA8")
+cc <- c("LA3BoxCar1", "LA3BoxCar2", "LA3BoxCar3",
+        "LA4BoxCar1", "LA4BoxCar2", "LA4BoxCar3",
+        "LA8bisBoxCar1", "LA8BoxCar1", "LA8BoxCar3",# "LA8combiBoxCar1",
+        "A3689", "A3689_161111143554", "A3689_161111164237",
+        "LCproto_A2719", "LCproto_A2719_161111205623", "LCproto_A2719_161111230316",
+        "LCproto_A2725" ,"LCproto_A2725_161112031716", "LCproto_A2725_161112052429")
+cc2 <- c("LA3_1", "LA3_2", "LA3_3",
+         "LA4_1", "LA4_2", "LA4_3",
+         "LA8_1", "LA8_2", "LA8_3",# "LA8_4",
+         "A3689_1", "A3689_2", "A3689_3",
+         "A2719_1", "A2719_2", "A2719_3",
+         "A2725_1" ,"A2725_2", "A2725_3")
+
+pdx.afib <- read.csv(paste0(get.path("replication", local),
+                            "PXD006675/txtAFibNewSearch/proteinGroups.txt"),
+                     h=T, stringsAsFactors = F, sep = "\t")
+
+lfq.cols <- colnames(pdx.afib)[grep("LFQ.intensity", colnames(pdx.afib))]
+lfq <- pdx.afib[, c("Protein.IDs", "Protein.names", "Gene.names", "Majority.protein.IDs",
+                    lfq.cols)]
+colnames(lfq) <- gsub("LFQ.intensity.", "", colnames(lfq))
+print("Data column names:")
+colnames(lfq)
+lfq$genes <- gsub("\\;", "_", lfq$Gene.names)
+lfq$proteins <- gsub("\\;", "_", lfq$Protein.IDs)
+```
+
+
+```{r}
+data <- lfq[, c("genes", "proteins", gsub("LFQ.intensity.", "", lfq.cols))]
+data <- data[, c("genes", "proteins", cc)]
+colnames(data) <- c("genes", "proteins", cc2)
+rownames(data) <- paste0(data$genes, ":", data$proteins)
+
+data <- data%>%
+    mutate(symbol=strsplit(genes,"_"))%>%
+    unnest(symbol)
+
+# write.table(c("sampleID", colnames(data)[-c(1,2)]),
+#             file = paste0(get.path("replication", local),
+#                        "PXD006675/sample_annotations_AFibNewSearch.csv"),
+#             sep = "\n", col.names = F, row.names = F,
+#             quote = F)
+
+print("without additional normalization:")
+boxplot(log2(data[, -c(1:2, 21)]+0.01), las=2)
+print("Sample A2719 seems to have much more high LFQ intensities than all other samples.")
+#data.sub$genes
+data.sub <- data[data$symbol %in% genes, ]
+data.sub <- data.sub[order(data.sub$genes), ]
+
+pheatmap(log2(data.sub[!(rownames(data.sub) %in% c("TOM1L2:Q6ZVM7-5_F5H3S6",
+                                                  "MYL7:H7C482",
+                                                  "TNNT2:C9JDF8")), -c(1:2, 21)]+0.01),
+         scale = "row",
+         cluster_rows = F,
+         cluster_cols = F,
+         labels_row = data.sub$symbol[!(rownames(data.sub) %in% c("TOM1L2:Q6ZVM7-5_F5H3S6",
+                                                  "MYL7:H7C482", "TNNT2:C9JDF8"))])
+
+data.mean <- data.sub
+data.mean$mean.LA3 <- apply(data.mean[, c("LA3_1", "LA3_2", "LA3_3")], 1,
+                            function(x) mean(x, na.rm = T))
+data.mean$mean.LA4 <- apply(data.mean[, c("LA4_1", "LA4_2", "LA4_3")], 1,
+                            function(x) mean(x, na.rm = T))
+data.mean$mean.LA8 <- apply(data.mean[, c("LA8_1", "LA8_2", "LA8_3")], 1, #, "LA8_4"
+                            function(x) mean(x, na.rm = T))
+data.mean$mean.ctrl <- apply(data.mean[, c("LA3_1", "LA3_2", "LA3_3",
+                                           "LA4_1", "LA4_2", "LA4_3",
+                                           "LA8_1", "LA8_2", "LA8_3")], 1, #, "LA8_4"
+                             function(x) mean(x, na.rm = T))
+data.mean$mean.AF1 <- apply(data.mean[, c("A3689_1", "A3689_2", "A3689_3")], 1,
+                            function(x) mean(x, na.rm = T))
+data.mean$mean.AF2 <- apply(data.mean[, c("A2719_1", "A2719_2", "A2719_3")], 1,
+                            function(x) mean(x, na.rm = T))
+data.mean$mean.AF3 <- apply(data.mean[, c("A2725_1", "A2725_2", "A2725_3")], 1,
+                            function(x) mean(x, na.rm = T))
+data.mean$mean.AF <- apply(data.mean[, c("A3689_1", "A3689_2", "A3689_3",
+                                           "A2719_1", "A2719_2", "A2719_3",
+                                           "A2725_1", "A2725_2", "A2725_3")], 1,
+                            function(x) mean(x, na.rm = T))
+
+pheatmap(log2(data.mean[!(rownames(data.mean) %in% c("TOM1L2:Q6ZVM7-5_F5H3S6",
+                                                  "MYL7:H7C482", "TNNT2:C9JDF8")),
+                       c("mean.ctrl", "mean.LA3", "mean.LA4", "mean.LA8",
+                         "mean.AF", "mean.AF1", "mean.AF2", "mean.AF3")]+0.01),
+         scale = "row",
+         cluster_rows = T,
+         cluster_cols = T,
+         labels_row = data.mean$symbol,
+         main = "log2 (not normalized) protein expression scaled per protein")
+
+pheatmap(log2(data.mean[!(rownames(data.mean) %in% c("TOM1L2:Q6ZVM7-5_F5H3S6",
+                                                  "MYL7:H7C482", "TNNT2:C9JDF8")),
+                       c("mean.ctrl", "mean.AF",
+                         "mean.LA3", "mean.LA4", "mean.LA8",
+                         "mean.AF1", "mean.AF2", "mean.AF3")]+0.01),
+         scale = "row",
+         cluster_rows = T,
+         cluster_cols = F,
+         labels_row = data.mean$symbol,
+         main = "log2 (not normalized) protein expression scaled per protein")
+
+```
+
+```{r}
+print("Median normalization per sample:")
+data.norm <- data[, -c(1:2, 21)] 
+data.norm[data.norm==0] <- NA
+data.norm <- apply(data.norm, 2, function(x) x/median(x, na.rm = T))
+boxplot(log2(data.norm), las=2)
+data.norm <- data.frame(cbind(data[, c("genes", "proteins", "symbol")], data.norm))
+data.norm.sub <- data.norm[data.norm$symbol %in% genes, ]
+data.norm.sub <- data.norm.sub[order(data.norm.sub$symbol), ]
+rownames(data.norm.sub) <- paste0(data.norm.sub$genes, ":", data.norm.sub$proteins)
+rownames(data.norm.sub)
+
+pheatmap(log2(data.norm.sub[, -c(1:3)]+0.01),
+         scale = "row",
+         cluster_rows = F,
+         cluster_cols = F,
+         labels_row = data.sub$symbol)
+
+data.norm.sub <- data.norm.sub[!(rownames(data.norm.sub) %in% c("TOM1L2:Q6ZVM7-5_F5H3S6",
+                                                  "MYL7:H7C482", "MYL7:C9JEG4", "MYL7:H7BZE4_H7C3E3_H7C1B1", "TNNT2:C9JDF8")), ]
+rownames(data.norm.sub) <- data.norm.sub$symbol
+
+pheatmap(log2(data.norm.sub[genes, -c(1:3)]+0.01),
+         scale = "row",
+         cluster_rows = F,
+         cluster_cols = F,
+         labels_row = genes.ev)
+
+data.mean.norm <- data.norm.sub
+data.mean.norm$mean.LA3 <- apply(data.mean.norm[, c("LA3_1", "LA3_2", "LA3_3")], 1,
+                            function(x) mean(x, na.rm = T))
+data.mean.norm$mean.LA4 <- apply(data.mean.norm[, c("LA4_1", "LA4_2", "LA4_3")], 1,
+                            function(x) mean(x, na.rm = T))
+data.mean.norm$mean.LA8 <- apply(data.mean.norm[, c("LA8_1", "LA8_2", "LA8_3")], 1, #, "LA8_4"
+                            function(x) mean(x, na.rm = T))
+data.mean.norm$mean.ctrl <- apply(data.mean.norm[, c("LA3_1", "LA3_2", "LA3_3",
+                                           "LA4_1", "LA4_2", "LA4_3",
+                                           "LA8_1", "LA8_2", "LA8_3")], 1, #, "LA8_4"
+                             function(x) mean(x, na.rm = T))
+data.mean.norm$mean.AF1 <- apply(data.mean.norm[, c("A3689_1", "A3689_2", "A3689_3")], 1,
+                            function(x) mean(x, na.rm = T))
+data.mean.norm$mean.AF2 <- apply(data.mean.norm[, c("A2719_1", "A2719_2", "A2719_3")], 1,
+                            function(x) mean(x, na.rm = T))
+data.mean.norm$mean.AF3 <- apply(data.mean.norm[, c("A2725_1", "A2725_2", "A2725_3")], 1,
+                            function(x) mean(x, na.rm = T))
+data.mean.norm$mean.AF <- apply(data.mean.norm[, c("A3689_1", "A3689_2", "A3689_3",
+                                           "A2719_1", "A2719_2", "A2719_3",
+                                           "A2725_1", "A2725_2", "A2725_3")], 1,
+                            function(x) mean(x, na.rm = T))
+
+pheatmap(log2(data.mean.norm[, c("mean.ctrl", "mean.LA3", "mean.LA4", "mean.LA8",
+                                 "mean.AF", "mean.AF1", "mean.AF2", "mean.AF3")]+0.01),
+         scale = "row",
+         cluster_rows = T,
+         cluster_cols = T,
+         labels_row = data.mean.norm$symbol,
+         main = "log2 (median normalized) protein expression scaled per protein")
+
+pheatmap(log2(data.mean.norm[, c("mean.ctrl", "mean.AF",
+                                 "mean.LA3", "mean.LA4", "mean.LA8",
+                                 "mean.AF1", "mean.AF2", "mean.AF3")]+0.01),
+         scale = "row",
+         cluster_rows = T,
+         cluster_cols = F,
+         labels_row = data.mean.norm$symbol,
+         main = "log2 (median normalized) protein expression scaled per protein")
+
+```
+
+## Human Heart Map (left and right atrium)
+
+```{r}
+pdx <- read.csv(paste0(get.path("replication", local),
+                       "PXD006675/search/proteinGroups.txt"),
+                h=T, stringsAsFactors = F, sep = "\t")
+lfq.cols2 <- colnames(pdx)[grep("LFQ.intensity", colnames(pdx))]
+lfq2 <- pdx[, c("Protein.IDs", "Protein.names", "Gene.names", "Majority.protein.IDs",
+                    lfq.cols2)]
+colnames(lfq2) <- gsub("LFQ.intensity.", "", colnames(lfq2))
+#colnames(lfq2)
+lfq2$proteins <- gsub("\\;", "_", lfq2$Protein.IDs)
+lfq2$genes <- gsub("\\;", "_", lfq2$Gene.names)
+#test2 <- get.duplicates(data2, "Protein.IDs")
+```
+
+### QC and genes of interest
+```{r, fig.width=12}
+data2 <- lfq2[, c("genes", "proteins", gsub("LFQ.intensity.", "", lfq.cols2))]
+rownames(data2) <- paste0(data2$genes, ":", data2$proteins)
+
+data2 <- data2%>%
+    mutate(symbol=strsplit(genes,"_"))%>%
+    unnest(symbol)
+
+data.sub2 <- data2[data2$symbol %in% genes, ]
+data.sub2 <- data.sub2[order(data.sub2$symbol), ]
+
+# write.table(colnames((data.sub2[, -c(1:4,134,135)])),
+#             file = paste0(get.path("replication", local),
+#                        "PXD006675/sample_annotations_search.csv"),
+#             sep = "\n", col.names = F, row.names = F,
+#             quote = F)
+sample.info <- read.csv(file = paste0(get.path("replication", local),
+                                      "PXD006675/sample_annotations_all.csv"),
+                        na.strings = c("", "NA"), stringsAsFactors = F)
+sample.info$sampleID <- as.character(sample.info$sampleID)
+
+print("Usable samples:")
+sample.info$sampleID[which(sample.info$use=="yes")]
+
+data.sub2 <- data.sub2[, c("symbol", "genes", "proteins",
+                           sample.info$sampleID[which(sample.info$use=="yes")])]
+
+boxplot(log2(data2[, sample.info$sampleID[which(sample.info$use=="yes")]]+0.01), las=2)
+#boxplot(log2(data2[, lr]+0.01), las=2)
+boxplot(log2(data2[, c(lr, "LV3", "LV4", "LV8", "RV3", "RV4", "RV8")]+0.01),
+        las=2)
+
+rep2 <- data.sub2[, c("symbol", "genes", "proteins", lr,
+                      "LV3", "LV4", "LV8",
+                      "RV3", "RV4", "RV8")]
+
+pheatmap(log2(as.matrix(data.sub2[, -c(1:3)])+0.01),
+         #scale = "row",
+         cluster_rows = F,
+         labels_row = data.sub2$symbol,
+         main = "log2(Protein LFQ intensity)")
+
+```
+
+## Comparison with AF case-ctrl data
+
+Left atrial samples were measured with different measurement techniques!
+```{r}
+rep <- data.norm.sub[, c("symbol", "genes", "proteins", cc2)]
+rep <- merge(rep, rep2,
+             by=c("symbol", "genes", "proteins"), all = T, sort = F)
+samples <- c("LV3", "LV4", "LV8",
+              "RV3", "RV4", "RV8",
+              "RA3", "RA4", "RA8",
+              "LA3", "LA4", "LA8",
+              "LA3_1", "LA3_2", "LA3_3",
+              "LA4_1", "LA4_2", "LA4_3",
+              "LA8_1", "LA8_2", "LA8_3",# "LA8_4",
+              "A3689_1", "A3689_2", "A3689_3",
+              "A2719_1", "A2719_2", "A2719_3",
+              "A2725_1", "A2725_2", "A2725_3")
+pheatmap(log2(rep[, samples]+1),
+         annotation_col = data.frame(AF = c(rep("ctrl", 6+6+9),
+                                            rep("AF", 9)),
+                                     type = c(rep("ventricle", 6),
+                                              rep("atrium", 6+9+9)),
+                                     region = c(rep("left", 3),
+                                                rep("right", 6),
+                                                rep("left", 3+9+9)),
+                                     row.names = samples,
+                                     stringsAsFactors = F),
+         annotation_colors = anno.cols,
+         scale = "row",
+         gaps_col = c(3,6,9,12,
+                      12,15,18,21,
+                      21,24,27,30),
+         cluster_rows = F,
+         cluster_cols = F,
+         labels_row = rep$symbol)
+```
+
+## GSEA on AFib data
+### Summary statistics
+
+```{r}
+stats <- read.csv(paste0(get.path("replication", local),
+                            "PXD006675/AFib volcanoplot data- copy.txt"),
+                     h=T, stringsAsFactors = F, sep = "\t")
+stats$LOG.P.value.2 <- as.numeric(paste0("0.", gsub("\\.", "", stats$LOG.P.value.)))*10
+stats$Difference2 <- as.numeric(paste0("0.", gsub("\\.", "", stats$Difference)))*10
+stats$Difference2[grep("\\-", stats$Difference)] <- as.numeric(paste0("-0.", gsub("\\.", "", gsub("\\-", "", stats$Difference[grep("\\-", stats$Difference)]))))*10
+stats$P.value2 <- 10^(-stats$LOG.P.value.2)
+stats$FDR <-p.adjust(stats$P.value2, method = "BH")
+stats$FDR.up <- NA
+stats$FDR.up[stats$Difference2>0] <-p.adjust(stats$P.value2[stats$Difference2>0], method = "BH")
+stats$FDR.down <- NA
+stats$FDR.down[stats$Difference2<0] <-p.adjust(stats$P.value2[stats$Difference2<0], method = "BH")
+stats$Gene.names[grep("02\\. Sep", stats$Gene.names)] <- gsub("02\\. Sep", "SEPT2", stats$Gene.names[grep("02\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("05\\. Sep", stats$Gene.names)] <- gsub("05\\. Sep", "SEPT5", stats$Gene.names[grep("05\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("07\\. Sep", stats$Gene.names)] <- gsub("07\\. Sep", "SEPT7", stats$Gene.names[grep("07\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("08\\. Sep", stats$Gene.names)] <- gsub("08\\. Sep", "SEPT8", stats$Gene.names[grep("08\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("09\\. Sep", stats$Gene.names)] <- gsub("09\\. Sep", "SEPT9", stats$Gene.names[grep("09\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("10\\. Sep", stats$Gene.names)] <- gsub("10\\. Sep", "SEPT10", stats$Gene.names[grep("10\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("11\\. Sep", stats$Gene.names)] <- gsub("11\\. Sep", "SEPT11", stats$Gene.names[grep("11\\. Sep", stats$Gene.names)])
+
+stats$Gene.names[grep("02\\. Mar", stats$Gene.names)] <- gsub("02\\. Mar", "MTARC2", stats$Gene.names[grep("02\\. Mar", stats$Gene.names)])
+stats$Gene.names[grep("05\\. Mar", stats$Gene.names)] <- gsub("05\\. Mar", "MTARC5", stats$Gene.names[grep("05\\. Mar", stats$Gene.names)])
+
+stats2 <- stats[, c("Protein.IDs", "Gene.names", "Significant",
+                    "LOG.P.value.2", "Difference2", "P.value2")]
+stats2 <- stats2%>%
+    mutate(symbol=strsplit(Gene.names,"\\;"))%>%
+    unnest(symbol)
+stats2 <- stats2[order(stats2$LOG.P.value.2, decreasing = T), ]
+stats2 <- stats2[!duplicated(stats2$symbol), ]
+stats2 <- as.data.frame(stats2)
+stats2$ID <- paste0(gsub("\\;", "_", stats2$Gene.names), ":",
+                    gsub("\\;", "_", stats2$Protein.IDs))
+stats2$proteins <- gsub("\\;", "_", stats2$Protein.IDs)
+rownames(stats2) <- stats2$symbol
+stats2 <- stats2[order(stats2$Significant, stats2$LOG.P.value.2), ]
+```
+
+### GSEA analysis
+
+```{r}
+# Gene Set Enrichment AF core genes --------------------------------------------
+f.fgsea <- paste0(get.path("replication", local),
+                  "PXD006675/AF_diff_expression_GSEA_results.RDS")
+if(!file.exists(f.fgsea)){
+  weights <- read.csv(file = paste0(get.path("locations", local),
+                                  "functional_annotation/NKX2-5/",
+                                  "HiC_ChIPseq_openChrom_NKX2-5_BS_per_gene.txt"),
+                    sep = "\t", stringsAsFactors = F)
+  rownames(weights) <- weights$symbol
+  c.trans <- c("TNNT2", "NKX2-5")
+  #c.prot <- c("NDUFA9", "ACOT9", "NDUFB3", "HIBADH", "ADK", "TALDO1")
+  c.prot <- c("CYB5R3", "NDUFA9", "NDUFB3", "HIBADH", "DLAT")
+  nkx <- c("PPIF", "MYL4", "CKM", "MYL7", "PGAM2", "TNNC1", "CYC1", "ETFB",
+           "PRDX5", "AK1", "ALDOA", "TCAP", "TOM1L2")
+  af.cis <- c("SNRNP27", "MYOZ1", "PCCB", "FAM13B", "SPATS2L", "GNB4", "NUCKS1")
+  nkx.all <- rownames(weights[weights$chip1.linked.open>0, ])
+  
+  library(fgsea)
+
+  gmt1 <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c2.cp.kegg.v6.1.symbols.gmt.txt")
+  gmt1[["Transcriptomics_core_genes"]] <- c.trans
+  gmt1[["Proteomics_core_genes"]] <- c.prot
+  gmt1[["Core_genes"]] <- c(c.trans, c.prot)
+  gmt1[["NKX2-5_targets"]] <- nkx
+  gmt1[["Cis_genes"]] <- af.cis
+  gmt1[["Atrial_fibrillation"]] <- c(c.trans, c.prot, nkx, af.cis)
+  
+  gmt2 <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c5.bp.v6.1.symbols.gmt.txt")
+  gmt2[["Transcriptomics_core_genes"]] <- c.trans
+  gmt2[["Proteomics_core_genes"]] <- c.prot
+  gmt2[["Core_genes"]] <- c(c.trans, c.prot)
+  gmt2[["NKX2-5_targets"]] <- nkx
+  gmt2[["Cis_genes"]] <- af.cis
+  gmt2[["Atrial_fibrillation"]] <- c(c.trans, c.prot, nkx, af.cis)
+  
+  gmt3 <- list()
+  gmt3[["Transcriptomics_core_genes"]] <- c.trans
+  gmt3[["Proteomics_core_genes"]] <- c.prot
+  gmt3[["Core_genes"]] <- c(c.trans, c.prot)
+  gmt3[["NKX2-5_targets"]] <- nkx
+  gmt3[["NKX2-5_and_targets"]] <- c("NKX2-5", nkx)
+  gmt3[["Cis_genes"]] <- af.cis
+  gmt3[["Atrial_fibrillation"]] <- c(c.trans, c.prot, nkx, af.cis)
+  gmt3[["AF_trans_core_genes_and_targets"]] <- c(c.trans, c.prot, nkx)
+  
+  gmt4 <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c3.tft.v6.0.symbols.gmt")
+  gmt4[["NKX2-5_custom"]] <- nkx.all
+  
+  fgsea.core <- NULL
+  set.seed(1111)
+  
+  library(dplyr)
+  library(tidyr)
+
+  rank <- sign(stats2$Difference2)*stats2$LOG.P.value.2
+  names(rank) <- stats2$symbol
+  
+  fgsea.core[["KEGG"]] <- fgsea(gmt1,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["KEGG"]] <- fgsea.core[["KEGG"]][order(fgsea.core[["KEGG"]]$pval), ]
+  
+  fgsea.core[["GO.bp"]] <- fgsea(gmt2,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["GO.bp"]] <- fgsea.core[["GO.bp"]][order(fgsea.core[["GO.bp"]]$pval), ]
+  
+  fgsea.core[["custom"]] <- fgsea(gmt3,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["custom"]] <- fgsea.core[["custom"]][order(fgsea.core[["custom"]]$pval), ]
+  
+  fgsea.core[["TF"]] <- fgsea(gmt4,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=10000)
+  fgsea.core[["TF"]] <- fgsea.core[["TF"]][order(fgsea.core[["TF"]]$pval), ]
+  
+  rank <- stats2$P.value2
+  names(rank) <- stats2$symbol
+    
+  fgsea.core[["KEGG.P"]] <- fgsea(gmt1,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["KEGG.P"]] <- fgsea.core[["KEGG.P"]][order(sign(fgsea.core[["KEGG.P"]]$ES),
+                                                             fgsea.core[["KEGG.P"]]$pval), ]
+  
+  fgsea.core[["GO.P"]] <- fgsea(gmt2,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["GO.P"]] <- fgsea.core[["GO.P"]][order(sign(fgsea.core[["GO.P"]]$ES),
+                                                             fgsea.core[["GO.P"]]$pval), ]
+  
+  fgsea.core[["custom.P"]] <- fgsea(gmt3,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["custom.P"]] <- fgsea.core[["custom.P"]][order(sign(fgsea.core[["custom.P"]]$ES),
+                                                             fgsea.core[["custom.P"]]$pval), ]
+  
+  fgsea.core[["TF.P"]] <- fgsea(gmt4,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=10000)
+  fgsea.core[["TF.P"]] <- fgsea.core[["TF.P"]][order(sign(fgsea.core[["TF.P"]]$ES),
+                                                             fgsea.core[["TF.P"]]$pval), ]
+  
+  stats2 <- stats2[order(stats2$Significant, stats2$LOG.P.value.2), ]
+  rank <- sign(stats2$Difference2)*order(stats2$Significant, stats2$LOG.P.value.2)
+  names(rank) <- stats2$symbol
+  
+  fgsea.core[["KEGG.rank"]] <- fgsea(gmt1,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["KEGG.rank"]] <- fgsea.core[["KEGG.rank"]][order(fgsea.core[["KEGG.rank"]]$pval), ]
+  
+  fgsea.core[["GO.rank"]] <- fgsea(gmt2,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["GO.rank"]] <- fgsea.core[["GO.rank"]][order(fgsea.core[["GO.rank"]]$pval), ]
+  
+  fgsea.core[["custom.rank"]] <- fgsea(gmt3,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["custom.rank"]] <- fgsea.core[["custom.rank"]][order(fgsea.core[["custom.rank"]]$pval), ]
+  
+  fgsea.core[["TF.rank"]] <- fgsea(gmt4,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=10000)
+  fgsea.core[["TF.rank"]] <- fgsea.core[["TF.rank"]][order(fgsea.core[["TF.rank"]]$pval), ]
+
+
+    
+  saveRDS(fgsea.core, file = f.fgsea)
+} else {
+  fgsea.core <- readRDS(f.fgsea)
+}
+
+print("GSEA with direction of effect (signed P-value):")
+fgsea.core[["custom"]][2, c(1:5, 7)]
+
+print("GSEA with direction of effect (signed P-value, incl. FC cutoff):")
+fgsea.core[["custom.rank"]][2, c(1:5, 7)]
+
+print("KEGG GSEA with direction of effect (signed P-value, incl. FC cutoff):")
+fgsea.core[["KEGG.rank"]][c(1, 3:22), c(1:5, 7)]
+```
+
+
+# Overall summary
+```{r}
+if(!file.exists(paste0(get.path("replication", local),
+                       "PXD006675/PXD006675_summary.RDS"))){
+  expr <- data.norm.sub
+  rownames(expr) <- expr$genes
+  expr <- log2(expr[genes, -c(1:3)])
+  rownames(expr) <- genes
+  
+  pxd006675 <- list()
+  pxd006675[["expr"]][["case.ctrl"]] <- expr
+  
+  pxd006675[["heat.AF"]] <- expr
+  pxd006675[["heat.AF"]]$ctrl_LA = as.numeric(t(apply(expr[, 1:9], 1, mean)))
+  pxd006675[["heat.AF"]]$AFib_LA = as.numeric(t(apply(expr[, 10:18], 1, mean)))
+  pxd006675[["heat.AF"]] <- t(scale(t(pxd006675[["heat.AF"]]),
+                                    center = T,
+                                    scale = T))[, c("ctrl_LA", "AFib_LA")]
+  
+  pxd006675[["GSEA.AF"]] <- fgsea.core[["custom.rank"]]
+  
+  pxd006675[["stats.AF"]] <- stats.prot
+  
+  rep[rep==0] <- NA
+  expr.cor <- merge(rep, stats2,
+                    by.x = c("symbol", "proteins"),
+                    by.y = c("symbol", "proteins"),
+                    all.x = T)
+  expr.cor <- expr.cor[order(expr.cor$LOG.P.value.2,
+                             rowSums(log(expr.cor[, 4:33]+1)),
+                             decreasing = T), ]
+  pheatmap(log(expr.cor[, c(cc2, lr)]+1),
+         cluster_rows = F,
+         cluster_cols = F,
+         labels_row = expr.cor$genes)
+  
+  
+  expr.cor <- expr.cor[c(which(!duplicated(expr.cor$symbol)),
+                         which(expr.cor$proteins %in% c("P12829_I3L1K6_I3L532_I3L3U1_I3L4B1_I3L1R3",
+                                                        "P04075_J3KPS3_H3BQN4_P04075-2_H3BUH7_H3BR04_H3BMQ8_H3BU78_H3BR68",
+                                                        "P30405_R4GN99_P30405-2_H0Y548",
+                                                        "P00568_Q5T9B7_H0Y4J6_H0YID2",
+                                                        "Q6ZVM7_Q6ZVM7-2_Q6ZVM7-3_B7Z2U2_Q6ZVM7-4_K7EKL6",
+                                                        "P30405_R4GN99_P30405",
+                                                        "Q16795_H3BRM9_F5GY40_F5H0J3"))), ]
+
+  t.cor <- data.frame(symbol=expr.cor$genes[expr.cor$genes %in% c("NKX2-5", targets)],
+                      cor=as.numeric(t(cor(log(t(expr.cor[expr.cor$genes %in% "NKX2-5", lr])+1),
+                                           log(t(expr.cor[expr.cor$genes %in% c("NKX2-5", targets), lr])+1),
+                                           use = "pairwise.complete.obs"))),
+                      stringsAsFactors = F)
+  t.cor <- t.cor[!is.na(t.cor$cor), ]
+  rownames(t.cor) <- t.cor$symbol
+  t.cor <- data.frame(cor=t.cor[c("NKX2-5", targets), "cor"])
+  pxd006675[["heat.cor"]] <- t.cor
+  
+  pxd006675[["expr"]][["lr.atrium"]] <- log2(expr.cor[expr.cor$genes %in% genes, lr])
+  pxd006675[["expr"]][["lr.atrium"]]$symbol <- expr.cor$genes[expr.cor$genes %in% genes]
+  pxd006675[["expr"]][["lr.atrium"]] <- pxd006675[["expr"]][["lr.atrium"]][rowSums(is.na(pxd006675[["expr"]][["lr.atrium"]]))<3, ]
+  rownames(pxd006675[["expr"]][["lr.atrium"]]) <- pxd006675[["expr"]][["lr.atrium"]]$symbol
+  pxd006675[["expr"]][["lr.atrium"]] <- pxd006675[["expr"]][["lr.atrium"]][genes, -7]
+  
+  expr2 <- pxd006675[["expr"]][["lr.atrium"]]
+  expr2$LA <- as.numeric(t(apply(expr2[, c("LA3", "LA4", "LA8")],
+                                 1, function(x) mean(x, na.rm = T))))
+  expr2$RA <- as.numeric(t(apply(expr2[, c("RA3", "RA4", "RA8")],
+                                 1, function(x) mean(x, na.rm = T))))
+  pxd006675[["heat.AF"]] <- cbind(pxd006675[["heat.AF"]],
+                                  t(scale(t(expr2),
+                                          center = T, scale = T))[, c("LA", "RA")])
+  
+  saveRDS(pxd006675,
+          file = paste0(get.path("replication", local),
+                        "PXD006675/PXD006675_summary.RDS"))
+  
+} else {
+  pxd006675 <- readRDS(paste0(get.path("replication", local),
+                              "PXD006675/PXD006675_summary.RDS"))
+}
+
+pheatmap(pxd006675[["heat.cor"]],
+         cluster_rows = F,
+         cluster_cols = F,
+         main = "Correlation across 3 right atrial and 3 left atrial samples")
+pheatmap(pxd006675[["heat.AF"]],
+         annotation_col = data.frame(AF = c("ctrl", "AF", "ctrl", "ctrl"),
+                                     region = c(rep("left", 3), "right"),
+                                     row.names = colnames(pxd006675[["heat.AF"]]),
+                                     stringsAsFactors = F),
+         annotation_colors = anno.cols,
+         gaps_row = c(2,7),
+         gaps_col = 2,
+         cluster_rows = F,
+         cluster_cols = F,
+         main = "Mean: Z-scores of expression values")
+
+```
+
+
+
+

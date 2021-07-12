@@ -8,6 +8,10 @@ setwd("/home/icb/ines.assum/projects/symAtrial_QTL/scripts")
 source("helper/helper.R")
 local=F
 
+merged.all = F
+threshold <- 1e-5
+outfile <- NULL
+
 get.duplicates <- function(df, cols){
   df2 <- data.frame(table(df[, cols]))
   df2 <- df2[df2$Freq>1, ]
@@ -18,6 +22,7 @@ get.duplicates <- function(df, cols){
 }
 
 do.stuff <- function(){
+  
   ## start the analysis
   outdir = prefix
   dir.create(outdir, recursive=T)
@@ -25,6 +30,88 @@ do.stuff <- function(){
   
   ## load the reference eQTL data set
   primary = read.table(file=primary.file, h=T, stringsAsFactors=F)
+  
+  ## export all significant QTLs matched with secondary dataset
+  if(merged.all){
+    if(primary.name=="GTEx_v7"){
+      anno <- readRDS(paste0(get.path("locations", local),
+                             "GTEx_ensembl_ids_AFHRIB_QTLgenes.RDS"))
+      primary$ensembl_gene_id <- gsub("\\..*", "", primary[, primary.gene])
+      primary <- merge(primary, anno[, c("ensembl_gene_id", "symbol")],
+                       all.x=T, sort=F)
+      primary[, c("s.variant", "s.gene", "s.pvalue", "s.beta")] <-
+        primary[, c(primary.variant, "symbol", primary.pvalue, primary.effect)]
+    } else {
+      primary[, c("s.variant", "s.gene", "s.pvalue", "s.beta")] <-
+        primary[, c(primary.variant, primary.gene, primary.pvalue, primary.effect)]
+    }
+    genes = unique(primary$s.gene)
+    if(secondary.name=="GTEx_v7"){
+      anno <- readRDS(paste0(get.path("locations", local),
+                             "GTEx_ensembl_ids_AFHRIB_QTLgenes.RDS"))
+      genes <- anno[anno$symbol %in% genes, "gene_id.v7"]
+      genes <- genes[!is.na(genes)]
+    }
+    gfile = paste(prefix, primary.name, "_egenes.txt", sep="")
+    cat(genes, sep="\n", file=gfile)
+    secondary = fread(paste("fgrep -f ", gfile, " -w ", secondary.file, sep=""), header=F)
+    setnames(secondary, colnames(read.csv(secondary.file, sep="\t", nrows=5)))
+    secondary = as.data.frame(secondary)
+    if(secondary.name=="GTEx_v7"){
+      secondary <- merge(secondary, anno,
+                         by.x = "gene_id", by.y = "gene_id.v7",
+                         all.x=T, sort=F)
+      secondary[, c("s.variant", "s.gene", "s.pvalue", "s.beta")] <-
+        secondary[, c(secondary.variant, "symbol", secondary.pvalue, secondary.effect)]
+    } else {
+      secondary[, c("s.variant", "s.gene", "s.pvalue", "s.beta")] <-
+        secondary[, c(secondary.variant, secondary.gene, secondary.pvalue, secondary.effect)]
+    }
+    
+    merged = merge(primary, secondary,
+                   by=c("s.variant", "s.gene"),
+                   suffixes=c("_primary", "_secondary"))
+    
+    ## make sure that the allele encoding is the same
+    same = toupper(merged[,"Allele1_primary"]) == toupper(merged[,"Allele1_secondary"])
+    if(primary.name=="GTEx_v7" | secondary.name=="GTEx_v7"){
+      same = toupper(merged[,"Allele1_primary"]) == toupper(merged[,"Allele2_secondary"])
+    }
+    
+    ## switch the sign of the effect size for the ones that are not matching
+    merged[!same,"s.beta_secondary"] = -merged[!same,"s.beta_secondary"]
+    
+    ## also note in the table whether the effect was switched
+    merged = data.frame(merged, switched=!same)
+    
+    ## first compare the number of genes with eQTL
+    secondary.significant = merged[,"s.pvalue_secondary"] < threshold
+    
+    ## also check on the gene level if there is a significant eQTL
+    secondary.genes = unique(secondary[secondary[,"s.pvalue"] < threshold,"s.gene"])
+    secondary.gene.level = merged[,"s.gene"] %in% secondary.genes
+    
+    ## check for concordance of the effect direction
+    concordant = sign(merged[,"s.beta_primary"]) == sign(merged[,"s.beta_secondary"])
+    
+    pal = c("lightgrey", "darkgrey", "red", "black")
+    col = pal[as.numeric(factor(interaction(concordant, secondary.significant),
+                                levels=c("FALSE.FALSE", "TRUE.FALSE",
+                                         "FALSE.TRUE", "TRUE.TRUE")))]
+    merged$col <- col
+    
+    if(is.null(outfile)){
+      saveRDS(merged,
+              file=paste0(outdir,
+                          primary.name, "_to_", secondary.name,
+                          "_merged_all_matched.RDS"))
+    }else{
+      saveRDS(merged,
+              file=paste0(outfile,
+                          "_merged_all_matched.RDS"))
+    }
+    
+  }
   
   ## extract the corresponding subset from secondary
   ## since this is a big file we filter for the SNPs that are the most
@@ -39,16 +126,16 @@ do.stuff <- function(){
   }
   if(primary.name=="GTEx_v7"){
     anno <- readRDS(paste0(get.path("locations", local),
-                           "ensembl_ids_AFHRIB_QTLgenes.RDS"))
+                           "GTEx_ensembl_ids_AFHRIB_QTLgenes.RDS"))
     best.primary$ensembl_gene_id <- gsub("\\..*", "", best.primary[, primary.gene])
-    best.primary <- merge(best.primary, anno[, c("ensembl_gene_id", "external_gene_name")],
+    best.primary <- merge(best.primary, anno[, c("ensembl_gene_id", "symbol")],
                           all.x=T, sort=F)
     if(secondary.name=="plasma_pQTL"){
       best.primary[, primary.variant] <- gsub("(_[^_]+)_.*", "\\1", best.primary[, primary.variant])
       best.primary[, primary.variant] <- gsub("_", ":", best.primary[, primary.variant])
     }
     best.primary[, c("s.variant", "s.gene", "s.pvalue", "s.beta")] <-
-      best.primary[, c(primary.variant, "external_gene_name", primary.pvalue, primary.effect)]
+      best.primary[, c(primary.variant, "symbol", primary.pvalue, primary.effect)]
   } else {
     best.primary[, c("s.variant", "s.gene", "s.pvalue", "s.beta")] <-
       best.primary[, c(primary.variant, primary.gene, primary.pvalue, primary.effect)]
@@ -58,7 +145,7 @@ do.stuff <- function(){
   if(secondary.name=="GTEx_v7"){
     anno <- readRDS(paste0(get.path("locations", local),
                            "GTEx_ensembl_ids_AFHRIB_QTLgenes.RDS"))
-    genes <- anno[anno$symbol %in% genes, "gene_id"]
+    genes <- anno[anno$symbol %in% genes, "gene_id.v7"]
   }
   gfile = paste(prefix, primary.name, "_egenes.txt", sep="")
   cat(genes, sep="\n", file=gfile)
@@ -78,6 +165,7 @@ do.stuff <- function(){
       secondary[, secondary.variant] <- gsub("_", ":", secondary[, secondary.variant])
     }
     secondary <- merge(secondary, anno,
+                       by.x = "gene_id", by.y = "gene_id.v7",
                        all.x=T, sort=F)
     secondary[, c("s.variant", "s.gene", "s.pvalue", "s.beta")] <-
       secondary[, c(secondary.variant, "symbol", secondary.pvalue, secondary.effect)]
@@ -131,8 +219,6 @@ do.stuff <- function(){
                  by=c("s.variant", "s.gene"),
                  suffixes=c("_primary", "_secondary"))
   
-  threshold = 1e-5
-  
   ## make sure that the allele encoding is the same
   same = toupper(merged[,"Allele1_primary"]) == toupper(merged[,"Allele1_secondary"])
   if(primary.name=="GTEx_v7" | secondary.name=="GTEx_v7"){
@@ -159,46 +245,61 @@ do.stuff <- function(){
   col = pal[as.numeric(factor(interaction(concordant, secondary.significant), levels=c("FALSE.FALSE", "TRUE.FALSE", "FALSE.TRUE", "TRUE.TRUE")))]
   merged$col <- col
   
-  saveRDS(merged,
-          file=paste0(outdir, primary.name, "_to_", secondary.name, "_merged.RDS"))
+  if(is.null(outfile)){
+    saveRDS(merged,
+            file=paste0(outdir,
+                        primary.name, "_to_", secondary.name,
+                        "_merged.RDS"))
+  }else{
+    saveRDS(merged,
+            file=paste0(outfile,
+                        "_merged.RDS"))
+  }
   
   # merged <- readRDS(file=paste0(prefix, primary.name, "_to_", secondary.name, "_merged.RDS"))
   # outdir <- prefix
   
-  pdf(file=paste0(outdir, primary.name, "_to_", secondary.name, "_scatterplot_effect_sizes.pdf"))
-  plot(merged[, c("s.beta_primary", "s.beta_secondary")],
-       col=col,
-       xlab=paste("Effect size", primary.name),
-       ylab=paste("Effect size", secondary.name))
-  abline(a=0, b=1)
-  legend("topleft", pch=1, col=pal, c("discordant | non sigificant", "concordant | nonsignificant", "discordant | significant", "concordant | significant"))
-  dev.off()
-  merged$col <- factor(merged$col,
-                       levels = c("lightgrey", "darkgrey", "red", "black"),
-                       ordered = T)
-  gg <- ggplot(merged, aes(x=s.beta_primary, y=s.beta_secondary, col=col)) +
-    geom_abline(intercept = 0, slope = 1, col="grey") +
-    geom_point() +
-    theme_bw() +
-    theme(aspect.ratio = 1) +
-    xlim(c(min(c(merged$s.beta_primary, merged$s.beta_secondary)),
-           max(c(merged$s.beta_primary, merged$s.beta_secondary)))) +
-    ylim(c(min(c(merged$s.beta_primary, merged$s.beta_secondary)),
-           max(c(merged$s.beta_primary, merged$s.beta_secondary)))) +
-    labs(x=paste("Effect size", primary.name),
-         y=paste("Effect size", secondary.name)) +
-    scale_color_manual(values = pal,
-                       labels = c("discordant | non sigificant",
-                                  "concordant | nonsignificant",
-                                  "discordant | significant",
-                                  "concordant | significant"),
-                       "", drop = F)
-  pdf(file=paste0(prefix, primary.name, "_to_", secondary.name, "_scatterplot_effect_sizes_ggplot.pdf"))
-  print(gg)
-  dev.off()
+  if(is.null(outfile)){
+    pdf(file=paste0(outdir, primary.name, "_to_", secondary.name, "_scatterplot_effect_sizes.pdf"))
+    plot(merged[order(merged$s.pvalue_secondary, decreasing = T),
+                c("s.beta_primary", "s.beta_secondary")],
+         col=col,
+         xlab=paste("Effect size", primary.name),
+         ylab=paste("Effect size", secondary.name))
+    abline(a=0, b=1)
+    legend("topleft", pch=1, col=pal, c("discordant | non significant", "concordant | nonsignificant", "discordant | significant", "concordant | significant"))
+    dev.off()
+    merged$col <- factor(merged$col,
+                         levels = c("lightgrey", "darkgrey", "red", "black"),
+                         ordered = T)
+    gg <- ggplot(merged[order(merged$s.pvalue_secondary, decreasing = T), ],
+                 aes(x=s.beta_primary, y=s.beta_secondary, col=col)) +
+      geom_abline(intercept = 0, slope = 1, col="grey") +
+      geom_point() +
+      theme_bw() +
+      theme(aspect.ratio = 1) +
+      xlim(c(min(c(merged$s.beta_primary, merged$s.beta_secondary)),
+             max(c(merged$s.beta_primary, merged$s.beta_secondary)))) +
+      ylim(c(min(c(merged$s.beta_primary, merged$s.beta_secondary)),
+             max(c(merged$s.beta_primary, merged$s.beta_secondary)))) +
+      labs(x=paste("Effect size", primary.name),
+           y=paste("Effect size", secondary.name)) +
+      scale_color_manual(values = pal,
+                         labels = c("discordant | non significant",
+                                    "concordant | nonsignificant",
+                                    "discordant | significant",
+                                    "concordant | significant"),
+                         "", drop = F)
+    pdf(file=paste0(prefix, primary.name, "_to_", secondary.name, "_scatterplot_effect_sizes_ggplot.pdf"))
+    print(gg)
+    dev.off()
+  }
+  
   
   #return(merged)
 }
+
+merged.all <- T
 
 ## First test: our eQTL vs GTEx -------
 if(T){
@@ -223,7 +324,33 @@ if(T){
   secondary.effect = "slope"
   
   do.stuff()
-  }
+}
+
+if(T){
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/"))
+  
+  primary.name = "eQTL"
+  secondary.name = "GTEx_v7"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "gtex.variant_id"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.txt")
+  secondary.map = NULL
+  secondary.gene = "gene_id"
+  secondary.variant = "variant_id"
+  secondary.pvalue = "pval_nominal"
+  secondary.effect = "slope"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".1e-5")
+  do.stuff()
+  outfile <- NULL
+}
 
 ## GTEx to eQTL-----------
 if (T) {
@@ -250,6 +377,242 @@ if (T) {
   do.stuff()
 }
 
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/"))
+  
+  primary.name = "GTEx_v7"
+  secondary.name = "eQTL"
+  
+  primary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.significant.txt")
+  primary.map = NULL
+  primary.gene = "gene_id"
+  primary.variant = "variant_id"
+  primary.pvalue = "pval_nominal"
+  primary.effect = "slope"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "gtex.variant_id"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".1e-5_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
+
+### alternative covariate sets ----
+#### our eQTL all vs GTEx -------
+if(T){
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/alternative/"))
+  
+  primary.name = "eQTL_cov_all"
+  secondary.name = "GTEx_v7"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "gtex.variant_id"
+  primary.pvalue = "pvalue"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.txt")
+  secondary.map = NULL
+  secondary.gene = "gene_id"
+  secondary.variant = "variant_id"
+  secondary.pvalue = "pval_nominal"
+  secondary.effect = "slope"
+  
+  do.stuff()
+}
+
+if(T){
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/alternative/"))
+  
+  primary.name = "eQTL_cov_all"
+  secondary.name = "GTEx_v7"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "gtex.variant_id"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.txt")
+  secondary.map = NULL
+  secondary.gene = "gene_id"
+  secondary.variant = "variant_id"
+  secondary.pvalue = "pval_nominal"
+  secondary.effect = "slope"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".1e-5")
+  do.stuff()
+  outfile <- NULL
+}
+
+#### GTEx to eQTL all -----------
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/alternative/"))
+  
+  primary.name = "GTEx_v7"
+  secondary.name = "eQTL_cov_all"
+  
+  primary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.significant.txt")
+  primary.map = NULL
+  primary.gene = "gene_id"
+  primary.variant = "variant_id"
+  primary.pvalue = "pval_nominal"
+  primary.effect = "slope"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "gtex.variant_id"
+  secondary.pvalue = "pvalue"
+  secondary.effect = "beta"
+  
+  do.stuff()
+}
+
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/alternative/"))
+  
+  primary.name = "GTEx_v7"
+  secondary.name = "eQTL_cov_all"
+  
+  primary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.significant.txt")
+  primary.map = NULL
+  primary.gene = "gene_id"
+  primary.variant = "variant_id"
+  primary.pvalue = "pval_nominal"
+  primary.effect = "slope"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "gtex.variant_id"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".1e-5_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
+
+#### our eQTL pop vs GTEx -------
+if(T){
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/alternative/"))
+  
+  primary.name = "eQTL_cov_pop"
+  secondary.name = "GTEx_v7"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "gtex.variant_id"
+  primary.pvalue = "pvalue"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.txt")
+  secondary.map = NULL
+  secondary.gene = "gene_id"
+  secondary.variant = "variant_id"
+  secondary.pvalue = "pval_nominal"
+  secondary.effect = "slope"
+  
+  do.stuff()
+}
+
+if(T){
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/alternative/"))
+  
+  primary.name = "eQTL_cov_pop"
+  secondary.name = "GTEx_v7"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "gtex.variant_id"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.txt")
+  secondary.map = NULL
+  secondary.gene = "gene_id"
+  secondary.variant = "variant_id"
+  secondary.pvalue = "pval_nominal"
+  secondary.effect = "slope"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".1e-5")
+  do.stuff()
+  outfile <- NULL
+}
+
+#### GTEx to eQTL pop -----------
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/alternative/"))
+  
+  primary.name = "GTEx_v7"
+  secondary.name = "eQTL_cov_pop"
+  
+  primary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.significant.txt")
+  primary.map = NULL
+  primary.gene = "gene_id"
+  primary.variant = "variant_id"
+  primary.pvalue = "pval_nominal"
+  primary.effect = "slope"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "gtex.variant_id"
+  secondary.pvalue = "pvalue"
+  secondary.effect = "beta"
+  
+  do.stuff()
+}
+
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/alternative/"))
+  
+  primary.name = "GTEx_v7"
+  secondary.name = "eQTL_cov_pop"
+  
+  primary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.significant.txt")
+  primary.map = NULL
+  primary.gene = "gene_id"
+  primary.variant = "variant_id"
+  primary.pvalue = "pval_nominal"
+  primary.effect = "slope"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "gtex.variant_id"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".1e-5_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
 
 ## our pQTL vs GTEx -------
 if(T){
@@ -274,7 +637,33 @@ if(T){
   secondary.effect = "slope"
   
   do.stuff()
-  }
+}
+
+if(T){
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/"))
+  
+  primary.name = "pQTL"
+  secondary.name = "GTEx_v7"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "gtex.variant_id"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.txt")
+  secondary.map = NULL
+  secondary.gene = "gene_id"
+  secondary.variant = "variant_id"
+  secondary.pvalue = "pval_nominal"
+  secondary.effect = "slope"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".1e-5")
+  do.stuff()
+  outfile <- NULL
+}
 
 ## GTEx to pQTL-----------
 if (T) {
@@ -300,8 +689,35 @@ if (T) {
   
   do.stuff()
   #merged <- readRDS(file=paste0(prefix, primary.name, "_to_", secondary.name, "_merged.RDS"))
-  }
+}
 
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/GTEx/"))
+  
+  primary.name = "GTEx_v7"
+  secondary.name = "pQTL"
+  
+  primary.file = paste0(get.path("gtex", local), "Heart_Atrial_Appendage.allpairs.cut.genes.snps.significant.txt")
+  primary.map = NULL
+  primary.gene = "gene_id"
+  primary.variant = "variant_id"
+  primary.pvalue = "pval_nominal"
+  primary.effect = "slope"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "gtex.variant_id"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".1e-5_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
 
 # # None of our pQTLs hits are measured in plasma -> check!
 # ## our pQTL vs plasma_pQTL -------
@@ -432,7 +848,37 @@ if (T) {
   
   do.stuff()
   #merged <- readRDS(file=paste0(prefix, primary.name, "_to_", secondary.name, "_merged.RDS"))
-  }
+}
+
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/AFHRI-B/"))
+  
+  primary.name = "eQTL"
+  secondary.name = "pQTL"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "snpid"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "snpid"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
+
 
 ## pQTL to eQTL-----------
 if (T) {
@@ -459,8 +905,36 @@ if (T) {
   
   do.stuff()
   #merged <- readRDS(file=paste0(prefix, primary.name, "_to_", secondary.name, "_merged.RDS"))
-  }
+}
 
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/AFHRI-B/"))
+  
+  primary.name = "pQTL"
+  secondary.name = "eQTL"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "snpid"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "snpid"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
 
 ## pQTL to res_pQTL-----------
 if (T) {
@@ -487,7 +961,37 @@ if (T) {
   
   do.stuff()
   #merged <- readRDS(file=paste0(prefix, primary.name, "_to_", secondary.name, "_merged.RDS"))
-  }
+}
+
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/AFHRI-B/"))
+  
+  primary.name = "pQTL"
+  secondary.name = "res_pQTL"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "snpid"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "snpid"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
+
 
 ## res_pQTL to pQTL-----------
 if (T) {
@@ -514,7 +1018,36 @@ if (T) {
   
   do.stuff()
   #merged <- readRDS(file=paste0(prefix, primary.name, "_to_", secondary.name, "_merged.RDS"))
-  }
+}
+
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/AFHRI-B/"))
+  
+  primary.name = "res_pQTL"
+  secondary.name = "pQTL"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "snpid"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "snpid"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
 
 
 ## ratios to res_pQTL-----------
@@ -542,7 +1075,36 @@ if (T) {
   
   do.stuff()
   #merged <- readRDS(file=paste0(prefix, primary.name, "_to_", secondary.name, "_merged.RDS"))
-  }
+}
+
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/AFHRI-B/"))
+  
+  primary.name = "ratios"
+  secondary.name = "res_pQTL"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "snpid"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "snpid"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
 
 ## res_pQTL to ratios-----------
 if (T) {
@@ -569,7 +1131,36 @@ if (T) {
   
   do.stuff()
   #merged <- readRDS(file=paste0(prefix, primary.name, "_to_", secondary.name, "_merged.RDS"))
-  }
+}
+
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/AFHRI-B/"))
+  
+  primary.name = "res_pQTL"
+  secondary.name = "ratios"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "snpid"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "snpid"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
 
 
 ## pQTL to ratios -----------
@@ -597,7 +1188,36 @@ if (T) {
   
   do.stuff()
   #merged <- readRDS(file=paste0(prefix, primary.name, "_to_", secondary.name, "_merged.RDS"))
-  }
+}
+
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/AFHRI-B/"))
+  
+  primary.name = "pQTL"
+  secondary.name = "ratios"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "snpid"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "snpid"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
 
 ## ratios to pQTL-----------
 if (T) {
@@ -624,8 +1244,36 @@ if (T) {
   
   do.stuff()
   #merged <- readRDS(file=paste0(prefix, primary.name, "_to_", secondary.name, "_merged.RDS"))
-  }
+}
 
+if (T) {
+  prefix = paste0(get.path("results", local), paste("imputed/cis/final/comparisons/AFHRI-B/"))
+  
+  primary.name = "ratios"
+  secondary.name = "pQTL"
+  
+  primary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                        primary.name, "_right_atrial_appendage_allpairs.significant.FDR.txt")
+  primary.map = NULL
+  primary.gene = "gene"
+  primary.variant = "snpid"
+  primary.pvalue = "FDR"
+  primary.effect = "beta"
+  
+  secondary.file = paste0(get.path("results", local), "imputed/cis/final/",
+                          secondary.name, "_right_atrial_appendage_allpairs.txt")
+  secondary.map = NULL
+  secondary.gene = "gene"
+  secondary.variant = "snpid"
+  secondary.pvalue = "FDR"
+  secondary.effect = "beta"
+  
+  outfile <- paste0(prefix, primary.name, ".FDR_to_", secondary.name, ".FDR")
+  threshold <- 0.05
+  do.stuff()
+  outfile <- NULL
+  threshold <- 1e-5
+}
 
 ## plasma_pQTL to ratios -----------
 if (T) {
@@ -757,5 +1405,4 @@ if(T){
   do.stuff()
 }
 
-
-#merged[, c("s.variant", "plasma.match_alleles", "Effect", "beta", "switched")]
+q(save="no")

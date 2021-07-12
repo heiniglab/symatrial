@@ -9,22 +9,25 @@
 setwd("~/work/symAtrial_QTL/scripts")
 
 # load libraries
-library(BatchJobs)
+library(batchtools)
 
 # source scripts
 source("batchtools_helper.R")
 
 do.stuff <- function(k){
 
-  cov_subdirs <- c("factors_fibro", "factors_cov", "factors_no_cov")
+  cov_subdirs <- c("factors_cov", "factors_fibro", "factors_no_cov",
+                   "factors_all", "factors_pop")
   norm_subdirs <- c("natural", "normalized")
   model_strings <- c("linear")
   types <- c("eqtl", "pqtl", "eqtl_res", "pqtl_res", "ratios")
+  nks <- c(0:30)
   
   batch.table <- expand.grid(cov_subdirs,
                              norm_subdirs,
                              model_strings,
                              types,
+                             nks,
                              stringsAsFactors = F)
   
   #k=1
@@ -32,8 +35,8 @@ do.stuff <- function(k){
   norm_sd <- batch.table[k, 2]
   model <- batch.table[k, 3]
   type <- batch.table[k, 4]
-  #nkp <- batch.table[k, 5]
-  batch.table[k, ]
+  nkp <- batch.table[k, 5]
+  print(batch.table[k, ])
   
   setwd("~/work/symAtrial_QTL/scripts")
   
@@ -60,35 +63,47 @@ do.stuff <- function(k){
   source("preprocessing/correction/peer/run_peer.R")
   
   if(cov_sd=="factors_cov"){
-    if(type=="mqtl"){
-      covariates <- prepare.covariates(imputed, batch = T, local = local)
-    }else{
-      covariates <- prepare.covariates(imputed, local = local)
-    }
-    run.peer(imputed, c(0:30), paste0(dir, "/", cov_sd), covariates)
+    covariates <- prepare.covariates(imputed, local = local)
+    run.peer(imputed, nkp, paste0(dir, "/", cov_sd), covariates)
+  } else if(cov_sd=="factors_all"){
+    covariates <- prepare.covariates(imputed, local = local, pop = 3)
+    run.peer(imputed, nkp, paste0(dir, "/", cov_sd), covariates)
+  } else if(cov_sd=="factors_pop"){
+    covariates <- prepare.covariates(imputed, local = local, pop = 3, only.pop=T)
+    run.peer(imputed, nkp, paste0(dir, "/", cov_sd), covariates)
   } else if (cov_sd=="factors_fibro"){
     fibro <- prepare.covariates(imputed, only.fibro=T, local = local)
     run.peer(imputed, c(0:30), paste0(dir, "/", cov_sd), fibro)
-  } else if (cov_sd=="factors_no_cov"){
-    run.peer(imputed, c(1:30), paste0(dir, "/", cov_sd))
+  } else if (cov_sd=="factors_no_cov" & nkp>0){
+    run.peer(imputed, nkp, paste0(dir, "/", cov_sd))
   }
   
   print(paste0(k, " done"))
 }
 
-cov_subdirs <- c("factors_fibro", "factors_cov", "factors_no_cov")
+cov_subdirs <- c("factors_cov", "factors_fibro", "factors_no_cov",
+                 "factors_all", "factors_pop")
 norm_subdirs <- c("natural", "normalized")
 model_strings <- c("linear")
 types <- c("eqtl", "pqtl", "eqtl_res", "pqtl_res", "ratios")
+nks <- c(0:30)
 
 batch.table <- expand.grid(cov_subdirs,
                            norm_subdirs,
                            model_strings,
                            types,
+                           nks,
                            stringsAsFactors = F)
 
-run.batchjobs(do.stuff, 1:dim(batch.table)[1], more.args=list(),
-              "peer", "tmp_dir_peer")
+names <- paste0("PEER", gsub("qtl", "", batch.table$Var4, batch.table$Var5))
 
+run.batchtools(do.stuff, 1:dim(batch.table)[1], more.args=list(),
+               names, "tmp_dir_PEER",
+               clean.up=F,
+               resources=list(partition="icb_cpu",
+                              memory="8G",
+                              ncpus = 1,
+                              measure.memory = TRUE,
+                              walltime="48:00:00"))
 
 q(save="no")

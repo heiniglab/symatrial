@@ -241,6 +241,18 @@ run.peer(imputed_res_t_norm, c(0:30), paste0(edir_res_norm, "/factors_cov"), cov
 run.peer(imputed_res_p_norm, c(0:30), paste0(pdir_res_norm, "/factors_cov"), covariates_res_p)
 run.peer(imputed_ratios_norm, c(0:30), paste0(dir_ratios_norm, "/factors_cov"), covariates_ratios)
 
+run.peer(imputed_p_norm, c(0:30), paste0(pdir_norm, "/factors_all"))
+run.peer(imputed_t_norm, c(0:30), paste0(edir_norm, "/factors_all"))
+run.peer(imputed_res_t_norm, c(0:30), paste0(edir_res_norm, "/factors_all"))
+run.peer(imputed_res_p_norm, c(0:30), paste0(pdir_res_norm, "/factors_all"))
+run.peer(imputed_ratios_norm, c(0:30), paste0(dir_ratios_norm, "/factors_all"))
+
+run.peer(imputed_t_norm, c(0:30), paste0(edir_norm, "/factors_pop"), covariates_t)
+run.peer(imputed_p_norm, c(0:30), paste0(pdir_norm, "/factors_pop"), covariates_p)
+run.peer(imputed_res_t_norm, c(0:30), paste0(edir_res_norm, "/factors_pop"), covariates_res_t)
+run.peer(imputed_res_p_norm, c(0:30), paste0(pdir_res_norm, "/factors_pop"), covariates_res_p)
+run.peer(imputed_ratios_norm, c(0:30), paste0(dir_ratios_norm, "/factors_pop"), covariates_ratios)
+
 
 # eQTL
 source("eqtl/eqtl.R")
@@ -254,7 +266,8 @@ path2genelocs_res <- paste0(get.path("locations", local), "residuals_locations_e
 path2genelocs_ratios <- paste0(get.path("locations", local), "residuals_locations_ensembl.txt")
 
 
-cov_subdirs <- c("factors_cov", "factors_no_cov", "factors_fibro")
+cov_subdirs <- c("factors_cov", "factors_fibro", "factors_no_cov",
+                 "factors_all", "factors_pop")
 norm_subdirs <- c("natural", "normalized")
 model_strings <- c("linear")
 types <- c("eqtl", "pqtl", "eqtl_res", "pqtl_res", "ratios")

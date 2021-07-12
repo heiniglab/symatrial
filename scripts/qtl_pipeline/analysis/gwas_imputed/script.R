@@ -555,3 +555,233 @@ print(chisq.test(tab.AF)$expected)
 print(fisher.test(tab.AF))
 sink()
 
+
+# Rheumatoid arthritis GWAS for revision ----
+if(T){
+  source("../../helper/helper.R")
+  local=F
+  
+  gwas.traits <- read.csv(paste0(get.path("gwas3", local),
+                                 "gwas-efo-trait-mappings_r2019-11-26.tsv"),
+                          sep="\t", h=T, quote="", fill=FALSE,
+                          stringsAsFactors = F)
+  
+  gwas = read.csv(paste0(get.path("gwas3", local), "gwas-catalog-associations_ontology-annotated_r2019-11-26.tsv"),
+                  sep="\t", h=T, quote="", fill=FALSE,
+                  stringsAsFactors = F)
+  
+  # Rheumatoid arthritis
+  RA <- "EFO_0000685"
+  RA.traits <- gwas.traits[grep(RA, gwas.traits$EFO.URI),
+                           c("Disease.trait", "EFO.URI")]
+  RA.gwas <- gwas[grep(paste(unique(RA.traits$EFO.URI),
+                             collapse = "|"),
+                       gwas$MAPPED_TRAIT_URI), ]
+  
+  source("snipe.R")
+  RA.snps <- RA.gwas[grep("rs.*", RA.gwas$SNPS), "SNPS"]
+  #test <- data.frame(RA.snps)
+  proxies.RA <- snipa.get.ld.by.snp(RA.snps,
+                                    rsquare=0.8,
+                                    population=c('eur'))
+  saveRDS(proxies.RA, file=paste0(get.path("gwas3", local),
+                                  "snipa_proxies_RA.RDS"))
+  
+  snap <- proxies.RA[, c("QRSID", "RSID", "RSALIAS", "DIST", "R2", "DPRIME")]
+  colnames(snap) <- c("SNP", "Proxy", "Alias", "Distance", "RSquared", "DPrime")
+  
+  RA.gwas = merge(RA.gwas, snap,
+                  by.x="SNPS", by.y="SNP", all.x=T)
+  
+  ## set SNPs that were not found as their own proxies
+  RA.gwas[is.na(RA.gwas$Proxy),"Proxy"] = RA.gwas[is.na(RA.gwas$Proxy),"SNPS"]
+  cat(setdiff(unique(RA.gwas$Proxy), c(NA, "")),
+      file=paste0(get.path("gwas3", local), "snps-for-eqtls-RA.txt"),
+      sep="\n")
+  write.table(RA.gwas, file=paste0(get.path("gwas3", local),
+                                   "RA.gwas.txt"),
+              sep="\t", quote=F, row.names=F, col.names = T)
+  
+  ## eQTL ----
+  our.eqtls <- readRDS(paste0(get.path("results", local),
+                              paste("imputed", "cis", "final",
+                                    "eQTL_right_atrial_appendage_allpairs.RDS",
+                                    sep="/")))
+  our.eqtls <- our.eqtls[our.eqtls$rs_id %in% RA.gwas$Proxy, ]
+  
+  #library(plyr)
+  # colnames(our.eqtls)
+  # [1] "gene"               "snpid"              "chr"                "variant_pos"       
+  # [5] "Allele1"            "Allele2"            "variant_id"         "rs_id"             
+  # [9] "statistic"          "pvalue"             "FDR"                "beta"              
+  # [13] "gtex.variant_id"    "gtex.match_alleles" "gene_id"    
+  
+  ## find pairs of GWA and eQTL SNPs significant in at least one of the two sets
+  our.gwa = RA.gwas
+  ## remove proxies for SNPs that were actually tested for eQTLs
+  tested = intersect(RA.gwas$SNPS, our.eqtls$snpid)
+  keep = our.gwa$SNPS == our.gwa$Proxy | !our.gwa$SNPS %in% tested
+  our.gwa = our.gwa[which(keep),]
+  our.gwa = our.gwa[!is.na(our.gwa$Proxy),]
+  
+  our.gwa = merge(our.gwa, our.eqtls, by.x="Proxy", by.y="snpid")
+  our.gwa.eqtl.t <- our.gwa
+  write.table(our.gwa.eqtl.t,
+              file=paste0(get.path("gwas3", local),
+                          "our.gwa.RA.eqtl.temp.txt"),
+              row.names = F, col.names = T, quote=F, sep="\t")
+  
+  # FDR  
+  our.pairs = our.gwa[which(our.gwa[,"FDR"] < 0.05),
+                      c("SNPS", "Proxy", "gene", "pvalue")]
+  ## select the best proxy
+  best <- NULL
+  try(
+    best = tapply(1:nrow(our.pairs),
+                  paste(our.pairs$SNPS, our.pairs$gene),
+                  function(idx) {
+                    return(idx[which.min(our.pairs$pvalue[idx])])
+                  })
+  )
+  our.pairs = our.pairs[best,]
+  our.gwa2 <- our.gwa[which(our.gwa[,"FDR"] < 0.05), ]
+  our.gwa2 <- our.gwa2[best,]
+  
+  write.table(our.gwa2, file=paste0(get.path("gwas3", local),
+                                    "our.gwa.RA.eqtl.FDR.txt"),
+              row.names = F, col.names = T, quote=F, sep="\t")
+  
+  rm(our.eqtls)
+  
+  
+  
+  
+  ## pQTL ----
+  our.pqtls <- readRDS(paste0(get.path("results", local),
+                              paste("imputed", "cis", "final",
+                                    "pQTL_right_atrial_appendage_allpairs.RDS",
+                                    sep="/")))
+  our.pqtls <- our.pqtls[our.pqtls$rs_id %in% RA.gwas$Proxy, ]
+  
+  ## find pairs of GWA and eQTL SNPs significant in at least one of the two sets
+  our.gwa = RA.gwas
+  ## remove proxies for SNPs that were actually tested for eQTLs
+  tested = intersect(RA.gwas$SNPS, our.pqtls$snpid)
+  keep = our.gwa$SNPS == our.gwa$Proxy | !our.gwa$SNPS %in% tested
+  our.gwa = our.gwa[which(keep),]
+  our.gwa = our.gwa[!is.na(our.gwa$Proxy),]
+  
+  our.gwa = merge(our.gwa, our.pqtls, by.x="Proxy", by.y="snpid")
+  our.gwa.pqtl.t <- our.gwa
+  write.table(our.gwa.pqtl.t, file=paste0(get.path("gwas3", local),
+                                          "our.gwa.RA.pqtl.temp.txt"),
+              row.names = F, col.names = T, quote=F, sep="\t")
+  
+  # FDR  
+  our.pairs = our.gwa[which(our.gwa[,"FDR"] < 0.05),
+                      c("SNPS", "Proxy", "gene", "pvalue")]
+  ## select the best proxy
+  best <- NULL
+  try(
+    best = tapply(1:nrow(our.pairs),
+                  paste(our.pairs$SNPS, our.pairs$gene),
+                  function(idx) {
+                    return(idx[which.min(our.pairs$pvalue[idx])])
+                  })
+  )
+  
+  our.pairs = our.pairs[best,]
+  our.gwa2 <- our.gwa[which(our.gwa[,"FDR"] < 0.05), ]
+  our.gwa2 <- our.gwa2[best,]
+  
+  write.table(our.gwa2, file=paste0(get.path("gwas3", local),
+                                    "our.gwa.RA.pqtl.FDR.txt"),
+              row.names = F, col.names = T, quote=F, sep="\t")
+  
+  rm(our.pqtls)
+  
+  
+  ## enrichment for eQTLs ----
+  our.qtls <- readRDS(paste0(get.path("results", local),
+                             paste("imputed", "cis", "final",
+                                   "eQTL_right_atrial_appendage_allpairs.RDS",
+                                   sep="/")))
+  our.gwa.qtl <- read.csv(paste0(get.path("gwas3", local),
+                                 "our.gwa.RA.eqtl.temp.txt"),
+                          h = T, stringsAsFactors=F, sep="\t")
+  
+  our.gwa.RA.qtl <- our.gwa.qtl
+  saveRDS(our.gwa.RA.qtl,
+          paste0(get.path("gwas3", local),
+                 "our_gwa_RA_eqtl.RDS"))
+  
+  ## also reconstrRAt a contingency table to test for enrichment of gwa hits
+  tested.snps = unique(our.qtls$rs_id)
+  
+  # our.gwa.eqtl <- read.csv(paste0(get.path("gwas2", local), "our.gwa.eqtl.txt"),
+  #             h=T, sep="\t")
+  sig.qtls = read.csv(paste0(get.path("results", local),
+                             paste("imputed", "cis", "final",
+                                   "eQTL_right_atrial_appendage_allpairs.significant.txt",
+                                   sep="/")),
+                      sep = "\t", stringsAsFactors = F, h = T)
+  
+  tab.RA = table(gwa.proxy=tested.snps %in% our.gwa.RA.qtl$Proxy,
+                 eqtl=tested.snps %in% sig.qtls$rs_id)
+  tab.RA
+  
+  sink(file="new/gwa-RA-snps-vs-sign-eqtls.txt")
+  cat("Observed:\n")
+  print(tab.RA)
+  cat("Expected:\n")
+  print(chisq.test(tab.RA)$expected)
+  print(fisher.test(tab.RA))
+  sink()
+  
+  cat("Observed:\n")
+  print(tab.RA)
+  cat("Expected:\n")
+  print(chisq.test(tab.RA)$expected)
+  print(fisher.test(tab.RA))
+  
+  ## enrichment for pQTLs ----
+  our.qtls <- readRDS(paste0(get.path("results", local),
+                             paste("imputed", "cis", "final",
+                                   "pQTL_right_atrial_appendage_allpairs.RDS",
+                                   sep="/")))
+  our.gwa.qtl <- read.csv(paste0(get.path("gwas3", local), "our.gwa.RA.pqtl.temp.txt"),
+                          h = T, stringsAsFactors=F, sep="\t")
+  
+  our.gwa.RA.qtl <- our.gwa.qtl
+  saveRDS(our.gwa.RA.qtl,
+          paste0(get.path("gwas3", local),
+                 "our_gwa_RA_pqtl.RDS"))
+  
+  ## also reconstrRAt a contingency table to test for enrichment of gwa hits
+  tested.snps = unique(our.qtls$rs_id)
+  
+  sig.qtls = read.csv(paste0(get.path("results", local),
+                             paste("imputed", "cis", "final",
+                                   "pQTL_right_atrial_appendage_allpairs.significant.txt",
+                                   sep="/")),
+                      sep = "\t", stringsAsFactors = F, h = T)
+  
+  tab.RA = table(gwa.proxy=tested.snps %in% our.gwa.RA.qtl$Proxy,
+                 pqtl=tested.snps %in% sig.qtls$rs_id)
+  tab.RA
+  
+  sink(file="new/gwa-RA-snps-vs-sign-pqtls.txt")
+  cat("Observed:\n")
+  print(tab.RA)
+  cat("Expected:\n")
+  print(chisq.test(tab.RA)$expected)
+  print(fisher.test(tab.RA))
+  sink()
+  
+  cat("Observed:\n")
+  print(tab.RA)
+  cat("Expected:\n")
+  print(chisq.test(tab.RA)$expected)
+  print(fisher.test(tab.RA))
+}
+

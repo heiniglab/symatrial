@@ -87,7 +87,7 @@ Here we are intersted to assess the power of a targeted trans only for AF SNPs (
 
 The significance threshold used for trans-eQTL:
 ```{r}
-n.snps.per.gene.trans <- 109
+n.snps.per.gene.trans <- 108
 n.genes <- 1:500
 alpha.trans <- 0.05 / (n.genes * n.snps.per.gene.trans)
 summary(alpha.trans)
@@ -100,10 +100,11 @@ Rsq <- quantile(trans.eqtl$Rsq, p=es.quantile)
 Rsq
 ```
 
+### AFHRI cohort
 
 Compute the power for the F test
 ```{r, warning=F}
-Nind.trans <- 75
+Nind.trans <- 74
 
 plot.data.trans <- NULL
 
@@ -155,6 +156,250 @@ g4 <- ggplot(data=plot.data.trans[plot.data.trans$es.quantile ==
 
 print(g4)
 ggsave("power_trans_eQTLs.pdf", g4, width=14, height=9, units="cm")
+
+```
+
+### Replication cohort
+
+The significance threshold used for trans-eQTL:
+```{r}
+n.snps.per.gene.trans <- 1 # NKX2-5 only, or 2 for NKX2-5 / TNNT2
+n.genes <- 1
+alpha.trans <- 0.05 / (n.genes * n.snps.per.gene.trans)
+summary(alpha.trans)
+```
+
+Select an effect size from the quantiles of the trans eQTL effect sizes of Vosa et al.
+```{r}
+# NKX2-5 eQTL: Rsq.t = tscore^2 / (Nsamples - 2 + tscore^2)
+#              Rsq.p = beta^2*2*p*(1-p)
+beta <- -0.517
+tscore <- -4.27
+Nsamples <- 73
+p <- 1-0.29
+Rsq.p <- beta^2*2*p*(1-p)
+Rsq.t <- tscore^2 / (Nsamples - 2 + tscore^2)
+```
+
+Compute the power for the F test
+```{r, warning=F}
+plot.data.trans <- NULL
+
+Nind.trans <- 52
+f2 <-  Rsq.p / (1 - Rsq.p)
+power.f2.per.test.trans <- sapply(alpha.trans, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes,
+                                    alpha.trans=alpha.trans,
+                                    Rsq=Rsq.p,
+                                    es.quantile="one test only",
+                                    cell_type="Atrial tissue"))
+Nind.trans <- 52
+f2 <-  Rsq.p / (1 - Rsq.p)
+power.f2.per.test.trans <- sapply(alpha.trans/4, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes=2,
+                                    alpha.trans=alpha.trans/4,
+                                    Rsq=Rsq.p,
+                                    es.quantile="four tests",
+                                    cell_type="Atrial tissue"))
+
+Nind.trans <- 52
+f2 <-  Rsq.t / (1 - Rsq.t)
+power.f2.per.test.trans <- sapply(alpha.trans, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes,
+                                    alpha.trans=alpha.trans,
+                                    Rsq=Rsq.t,
+                                    es.quantile="one test only",
+                                    cell_type="Atrial tissue"))
+Nind.trans <- 52
+f2 <-  Rsq.t / (1 - Rsq.t)
+power.f2.per.test.trans <- sapply(alpha.trans/4, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes=2,
+                                    alpha.trans=alpha.trans/4,
+                                    Rsq=Rsq.t,
+                                    es.quantile="four tests",
+                                    cell_type="Atrial tissue"))
+
+Nind.trans <- 39
+f2 <-  Rsq.p / (1 - Rsq.p)
+power.f2.per.test.trans <- sapply(alpha.trans, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes,
+                                    alpha.trans=alpha.trans,
+                                    Rsq=Rsq.p,
+                                    es.quantile="one test only",
+                                    cell_type="Atrial tissue"))
+Nind.trans <- 39
+f2 <-  Rsq.p / (1 - Rsq.p)
+power.f2.per.test.trans <- sapply(alpha.trans/4, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes=2,
+                                    alpha.trans=alpha.trans/4,
+                                    Rsq=Rsq.p,
+                                    es.quantile="four tests",
+                                    cell_type="Atrial tissue"))
+
+Nind.trans <- 39
+f2 <-  Rsq.t / (1 - Rsq.t)
+power.f2.per.test.trans <- sapply(alpha.trans, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes,
+                                    alpha.trans=alpha.trans,
+                                    Rsq=Rsq.t,
+                                    es.quantile="one test only",
+                                    cell_type="Atrial tissue"))
+Nind.trans <- 39
+f2 <-  Rsq.t / (1 - Rsq.t)
+power.f2.per.test.trans <- sapply(alpha.trans/4, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes=2,
+                                    alpha.trans=alpha.trans/4,
+                                    Rsq=Rsq.t,
+                                    es.quantile="four tests",
+                                    cell_type="Atrial tissue"))
+
+Nind.trans <- 12
+f2 <-  Rsq.p / (1 - Rsq.p)
+power.f2.per.test.trans <- sapply(alpha.trans, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes,
+                                    alpha.trans=alpha.trans,
+                                    Rsq=Rsq.p,
+                                    es.quantile="one test only",
+                                    cell_type="Atrial tissue"))
+Nind.trans <- 12
+f2 <-  Rsq.p / (1 - Rsq.p)
+power.f2.per.test.trans <- sapply(alpha.trans/4, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes=2,
+                                    alpha.trans=alpha.trans/4,
+                                    Rsq=Rsq.p,
+                                    es.quantile="four tests",
+                                    cell_type="Atrial tissue"))
+
+Nind.trans <- 12
+f2 <-  Rsq.t / (1 - Rsq.t)
+power.f2.per.test.trans <- sapply(alpha.trans, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes,
+                                    alpha.trans=alpha.trans,
+                                    Rsq=Rsq.t,
+                                    es.quantile="one test only",
+                                    cell_type="Atrial tissue"))
+Nind.trans <- 12
+f2 <-  Rsq.t / (1 - Rsq.t)
+power.f2.per.test.trans <- sapply(alpha.trans/4, function(alpha) {
+  df.num <- 1 ## dfs of the full model
+  df.denom <- Nind.trans - df.num - 1 ## error dfs
+  pwr.f2.test(u=df.num, v=df.denom, f2=f2, sig.level=alpha)$power
+})
+plot.data.trans <- rbind(plot.data.trans,
+                         data.frame(sample_size=Nind.trans,
+                                    power=power.f2.per.test.trans,
+                                    n.genes=2,
+                                    alpha.trans=alpha.trans/4,
+                                    Rsq=Rsq.t,
+                                    es.quantile="four tests",
+                                    cell_type="Atrial tissue"))
+
+g3 <- ggplot(data=plot.data.trans,
+             aes(x=n.genes, y=power, col=factor(es.quantile))) + 
+  geom_line() +
+  geom_point() +
+  labs(col="ES quantile",
+       y="Power to detect trans eQTL",
+       x="Number of genes tested") +
+  scale_color_manual(values=col.set)
+
+print(g3)
+# ggsave("power_trans_eQTLs_replication_cohort.png",
+#        g3, width=14, height=9, units="cm")
+```
+
+Results:
+```{r}
+#plot.data.trans %>% group_by(es.quantile) %>% filter(rank(abs(0.5 - power)) == 1)
+plot.data.trans
+```
+
+```{r, eval=F}
+g4 <- ggplot(data=plot.data.trans[plot.data.trans$es.quantile ==
+                                    es.quantile[length(es.quantile)],],
+             aes(x=n.genes, y=power)) +
+  geom_line() +
+  labs(y="Power to detect trans eQTL",
+       x="Number of genes tested")
+
+print(g4)
 
 ```
 

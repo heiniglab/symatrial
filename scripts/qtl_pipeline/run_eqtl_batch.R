@@ -10,30 +10,34 @@
 setwd("~/work/symAtrial_QTL/scripts")
 
 # load libraries
-library(BatchJobs)
+library(batchtools)
 
 # source scripts
 source("batchtools_helper.R")
 
 do.stuff <- function(k){
   #k=1
-  cov_subdirs <- c("factors_fibro", "factors_cov", "factors_no_cov")
+  cov_subdirs <- c("factors_cov", "factors_fibro", "factors_no_cov",
+                   "factors_all", "factors_pop")
   norm_subdirs <- c("natural", "normalized")
   model_strings <- c("linear")
   types <- c("eqtl", "pqtl", "eqtl_res", "pqtl_res", "ratios")
+  nks <- list(0:5, 6:10, 11:15, 16:20, 21:25, 26:30)
   
   batch.table <- expand.grid(cov_subdirs,
                              norm_subdirs,
                              model_strings,
                              types,
+                             nks,
                              stringsAsFactors = F)
   
-  #k=1
+  nkp <- NULL
   cov_sd <- batch.table[k, 1]
   norm_sd <- batch.table[k, 2]
   model <- batch.table[k, 3]
   type <- batch.table[k, 4]
-  batch.table[k, ]
+  nkp <- batch.table[k, 5][[1]]
+  print(batch.table[k, ])
   trans <- F
   
   setwd("~work/symAtrial_QTL/scripts")
@@ -64,36 +68,24 @@ do.stuff <- function(k){
     geno <- geno_t
     path2genelocs <- path2genelocs_t
     i <- "t"
-    #cov_file <- "peer_factors_nk12.txt"
   }
   
   if(type == "pqtl"){
     geno <- geno_p
     path2genelocs <- path2genelocs_p
     i <- "p"
-    #cov_file <- "peer_factors_nk08.txt"
-  }
-  
-  if(type == "pqtl_trans"){
-    geno <- geno_p
-    path2genelocs <- path2genelocs_p
-    i <- "p"
-    trans <- T
-    # cov_file <- "peer_factors_nk08.txt"
   }
   
   if(type == "eqtl_res"){
     geno <- geno_res_t
     path2genelocs <- path2genelocs_res
     i <- "t"
-    #cov_file <- "peer_factors_nk?.txt"
   }
   
   if(type == "pqtl_res"){
     geno <- geno_res_p
     path2genelocs <- path2genelocs_res
     i <- "p"
-    #cov_file <- "peer_factors_nk?.txt"
   }
   
   if(type == "ratios"){
@@ -108,34 +100,59 @@ do.stuff <- function(k){
     file <- paste0("imputed_expression_", i , ".txt")
   }
   
-  eqtls(expression_file=paste(peer_path, norm_sd, type, file, sep="/"),
-        genotype = geno,
-        snplocs = path2snplocs,
-        genelocs = path2genelocs,
-        model = model, 
-        outdir = paste(get.path("results"), "imputed", "cis", model, type, norm_sd, cov_sd, sep = "/"),
-        covariate_dir = paste(peer_path, norm_sd, type, cov_sd, sep="/"),
-        trans=trans
-  )
+  if(!is.null(nkp)){
+    files <- paste0(paste(peer_path, norm_sd, type, cov_sd, sep="/"),
+                    paste0("/peer_factors_nk", sprintf("%02d", nkp),".txt"))
+    eqtls(expression_file=paste(peer_path, norm_sd, type, file, sep="/"),
+          genotype = geno,
+          snplocs = path2snplocs,
+          genelocs = path2genelocs,
+          model = model, 
+          outdir = paste(get.path("results"), "imputed", "cis", model, type, norm_sd, cov_sd, sep = "/"),
+          covariate_dir = paste(peer_path, norm_sd, type, cov_sd, sep="/"),
+          trans=trans,
+          files = files
+    )
+  } else {
+    eqtls(expression_file=paste(peer_path, norm_sd, type, file, sep="/"),
+          genotype = geno,
+          snplocs = path2snplocs,
+          genelocs = path2genelocs,
+          model = model, 
+          outdir = paste(get.path("results"), "imputed", "cis", model, type, norm_sd, cov_sd, sep = "/"),
+          covariate_dir = paste(peer_path, norm_sd, type, cov_sd, sep="/"),
+          trans=trans
+    )
+  }
 }
 
-cov_subdirs <- c("factors_fibro", "factors_cov", "factors_no_cov")
+cov_subdirs <- c("factors_cov", "factors_fibro", "factors_no_cov",
+                 "factors_all", "factors_pop")
 norm_subdirs <- c("natural", "normalized")
 model_strings <- c("linear")
 types <- c("eqtl", "pqtl", "eqtl_res", "pqtl_res", "ratios")
+nks <- list(0:5, 6:10, 11:15, 16:20, 21:25, 26:30)
 
 batch.table <- expand.grid(cov_subdirs,
                            norm_subdirs,
                            model_strings,
                            types,
+                           nks,
                            stringsAsFactors = F)
 
-run.batchjobs(do.stuff, 1:dim(batch.table)[1], more.args=list(),
-              "QTL", "tmp_dir_QTL", clean.up=F,
-              resources = list(partition="my_queue",
-                               memory="80G",
-                               ncpus = 1,
-                               measure.memory = TRUE,
-                               walltime="48:00:00"))
+names <- paste0(batch.table$Var4,
+                sapply(batch.table$Var5,
+                       FUN = function(x){x[1]}), "_",
+                sapply(batch.table$Var5,
+                       FUN = function(x){x[length(x)]}))
+
+run.batchtools(do.stuff, 1:dim(batch.table)[1], more.args=list(),
+               names, "tmp_dir_QTL",
+               clean.up=F,
+               resources=list(partition="icb_cpu",
+                              memory="40G",
+                              ncpus = 1,
+                              measure.memory = TRUE,
+                              walltime="12:00:00"))
 
 q(save = "no")

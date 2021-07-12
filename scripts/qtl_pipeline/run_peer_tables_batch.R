@@ -6,7 +6,8 @@ library(batchtools)
 # source scripts
 source("batchtools_helper.R")
 
-cov_subdirs <- c("factors_cov", "factors_fibro", "factors_no_cov")
+cov_subdirs <- c("factors_cov", "factors_fibro", "factors_no_cov",
+                 "factors_pop", "factors_all")
 norm_subdirs <- c("normalized", "natural")
 model_strings <- c("linear")
 types <- c("eqtl", "eqtl_res", "pqtl", "pqtl_res", "ratios")
@@ -27,7 +28,8 @@ do.stuff <- function(k){
   # peer table analysis
   source("analysis/peer_tables/peer_result.R")
   
-  cov_subdirs <- c("factors_cov", "factors_fibro", "factors_no_cov")
+  cov_subdirs <- c("factors_cov", "factors_fibro", "factors_no_cov",
+                   "factors_pop", "factors_all")
   norm_subdirs <- c("normalized", "natural")
   model_strings <- c("linear")
   types <- c("eqtl", "eqtl_res", "pqtl", "pqtl_res", "ratios")
