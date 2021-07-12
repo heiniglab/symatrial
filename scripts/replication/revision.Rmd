@@ -1,0 +1,951 @@
+---
+title: "Nature Communications Revision"
+author: "Ines Assum"
+date: \today
+graphics: yes
+header-includes:
+  \usepackage{graphicx, fancyhdr, multicol, xcolor}
+  \usepackage{sectsty, titling, lmodern}
+  \usepackage[T1]{fontenc}
+  \renewcommand*\familydefault{\sfdefault}
+  \definecolor{myblue}{RGB}{31, 120, 180}
+  \allsectionsfont{\color{myblue}}
+  \sectionfont{\color{myblue}\sectionrule{3ex}{0pt}{-1ex}{1pt}}
+  \pretitle{\begin{center}\LARGE\bfseries\color{myblue}}
+  \posttitle{\par\end{center}\vskip 0.5em}
+  \pagestyle{fancy}
+  \lhead{Ines Assum}
+  \rhead{\today}
+  \chead{Nature Communications Revision}
+output: 
+  pdf_document:
+    toc: FALSE
+    number_sections: TRUE
+---
+
+```{r setup, include=FALSE}
+options(width = 90)
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+```
+
+```{r}
+setwd("~/work/symAtrial_QTL/scripts/revision")
+
+library(ggplot2)
+library(ggpubr)
+library(RColorBrewer)
+library(pheatmap)
+library(qvalue)
+library(ppcor)
+library(MASS)
+
+source("../helper/helper.R")
+source("../analysis/boxplots/boxplots.R")
+source("../preprocessing/correction/normalization/norm.R")
+local=F
+get.duplicates <- function(df, cols){
+  df2 <- data.frame(table(df[, cols]))
+  df2 <- df2[df2$Freq>1, ]
+  colnames(df2) <- c(cols, "Freq")
+  df <- merge(df,
+              df2[cols],
+              all.y=T)
+}
+
+HMGU.blue <- "#003E6E"
+mygray <- "#C6DDEA"
+myred <- "#C01514"
+col.paired <- brewer.pal(n = 11, "Paired")
+col.set <- col.paired[c(2,9,8)]
+col.set2 <- brewer.pal(n=11, "BrBG")[7:10]
+
+anno.cols <- list(AF=c("ctrl" = "black",
+                       "AF" = myred),
+                  type=c("trans eQTL" = col.paired[2],
+                         "trans pQTL" = col.paired[10],
+                         "NKX2-5 targets" = col.paired[9]),
+                  region=c("right atrium" = col.paired[3],
+                           "left atrium" = col.paired[5]),
+                  omic=c("mRNA" = col.paired[2],
+                         "protein" = col.paired[10]),
+                  dataset=c("AFHRI" = col.set2[1],
+                            "GSE128188" = col.set2[2],
+                            "PXD006675" = col.set2[3],
+                            "GTEx" = col.set2[4]))
+
+e.genes <- c("NKX2-5", "TNNT2")
+print("eQTL genes:")
+e.genes
+p.genes <- c("CYB5R3", "NDUFA9", "DLAT", "NDUFB3", "HIBADH")
+print("pQTL genes:")
+p.genes
+targets <- c("PPIF", "MYL4", "CKM", "MYL7", "PGAM2",
+             "TNNC1", "CYC1", "ETFB", "PRDX5",
+             "AK1", "ALDOA", "TCAP", "TOM1L2")
+print("NKX2-5 targets:")
+targets
+genes <- c("TNNT2", "NKX2-5",
+           "CYB5R3", "NDUFB3", "HIBADH", "NDUFA9", "DLAT",
+           "PPIF", "MYL4", "CKM", "MYL7", "PGAM2",
+           "TNNC1", "CYC1", "ETFB", "PRDX5",
+           "AK1", "ALDOA", "TCAP", "TOM1L2")
+
+genes.ev <- c("TNNT2*,++", "NKX2-5**",
+              "CYB5R3", "NDUFB3+", "HIBADH", "NDUFA9++", "DLAT",
+              "PPIF", "MYL4**,++", "CKM++", "MYL7", "PGAM2++", "TNNC1*",
+              "CYC1", "ETFB**,++", "PRDX5", "AK1", "ALDOA++", "TCAP*", "TOM1L2")
+targets.ev <- c("PPIF", "MYL4**,++", "CKM++", "MYL7", "PGAM2++", "TNNC1*",
+                "CYC1", "ETFB**,++", "PRDX5", "AK1", "ALDOA++", "TCAP*", "TOM1L2")
+
+fibro.genes <- c("ELN", "FGF10", "JAG1", "KIAA1199", "CPXM2", "FOSB",
+                 "FCRL2", "SCN7A", "NOV", "ARHGAP20", "CILP", "FRAS1",
+                 "DCDC2", "NRG1", "CLEC3B", "AFAP1L2", "COL14A1", "ITGBL1")
+print("Genes in fibrosis score: ")
+print(fibro.genes)
+```
+
+# Trans QTLs may be disease-specific
+```{r}
+f.afhri <- paste0(get.path("results", local),
+                  "imputed/cis/paper_data/",
+                  "AFHRI_B_trans_replication_data.RDS")
+
+df.afhri <- readRDS(f.afhri)
+df.afhri$overall_AF <- 1
+df.afhri$overall_AF[df.afhri$AF_Status=="ctrl"] <- 0
+```
+
+```{r}
+ggarrange(
+  ggplot(df.afhri[!is.na(df.afhri$rs9481842), ],
+         aes(x=rs9481842, y=NKX2.5_trans,
+             col=rs9481842, fill=rs9481842)) +
+    geom_boxplot(alpha=0.2) +
+    geom_point(position = position_jitter(width = 0.3), size=1) +
+    scale_color_manual(values = col.set) +
+    scale_fill_manual(values = col.set) +
+    theme_bw() +
+    theme(legend.position = "none",
+          aspect.ratio = 1) +
+    facet_wrap(~AF_Status) +
+    ggtitle("Disease-specific trans eQTL rs9481842 and NKX2-5"),
+  ggplot(df.afhri[!is.na(df.afhri$rs9481842), ],
+         aes(x=rs9481842, y=NKX2.5_trans,
+             col=rs9481842, fill=rs9481842)) +
+    geom_boxplot(alpha=0.2) +
+    geom_point(position = position_jitter(width = 0.3), size=1) +
+    scale_color_manual(values = col.set) +
+    scale_fill_manual(values = col.set) +
+    theme_bw() +
+    theme(aspect.ratio = 1) +
+    facet_wrap(~overall_AF) +
+    ggtitle("Disease-specific trans eQTL rs9481842 and NKX2-5"),
+  nrow = 2, ncol = 1, common.legend = F)
+```
+
+# PRS missingness
+
+```{r}
+if(!file.exists(paste0(get.path("genotype", local),
+                       "riskSNPs_AF_CAD_EUR_AFHRI_B_stats.RDS"))){
+  ref <- readRDS(paste0(get.path("risk", local),
+                 "AF/AtrialFibrillation_PRS_LDpred_rho0.003_v3_reference_EUR_AFHRI-B.RDS"))
+  bfile <- paste0(get.path("genotype", local),
+                  "riskSNPs_AF_CAD_EUR_AFHRI_B")
+  AF_score <- read.table(paste0(get.path("genotype", local),
+                                "AF_EUR_AFHRI-B_risk_score.profile"),
+                         h=T, stringsAsFactors=F)
+  
+  ref_risk_file <- paste0(get.path("risk", local),
+                          "AF/AtrialFibrillation_PRS_LDpred_rho0.003_v3_reference_EUR_AFHRI-B.txt")
+  
+  AF_score$rate <- AF_score$CNT/(dim(ref)[1]*2)
+  
+  outfile <- paste0(get.path("genotype", local),
+                    "riskSNPs_AF_CAD_EUR_AFHRI_B_miss")
+  system(paste0("plink --bfile ", bfile,
+                " --extract ", ref_risk_file,
+                #" --keep ", paste0(get.path("genotype", local), "AFHRI-B.fam"),
+                " --hardy",
+                " --out ", outfile))
+  system(paste0("plink --bfile ", bfile,
+                " --extract ", ref_risk_file,
+                " --keep ", paste0(get.path("genotype", local), "AFHRI-B.fam"),
+                " --missing",
+                " --out ", outfile))
+  
+  outfile <- paste0(get.path("genotype", local),
+                    "riskSNPs_AF_CAD_EUR_AFHRI_B_stats")
+  system(paste0("plink --bfile ", bfile,
+                " --extract ", ref_risk_file,
+                " --remove ", paste0(get.path("genotype", local), "AFHRI-B.fam"),
+                " --freq",
+                " --out ", outfile))
+
+  hwe <- read.table(paste0(get.path("genotype", local),
+                           "riskSNPs_AF_CAD_EUR_AFHRI_B_miss.hwe"),
+                    h=T, stringsAsFactors = F)
+  hwe.a <- hwe[hwe$TEST == "UNAFF", ]
+  hwe.b <- hwe[hwe$TEST == "ALL", ]
+  hwe.a$TEST <- NULL
+  hwe.b$TEST <- NULL
+  head(hwe.a)
+  head(hwe.b)
+  hwe <- merge(hwe.a, hwe.b,
+               by = c("CHR", "SNP", "A1", "A2"),
+               suffixes = c(".afhri", ".all"),
+               all = T, sort = F)
+  #doubles <- hwe[hwe$SNP %in% hwe$SNP[duplicated(hwe$SNP)], ]
+  head(hwe)
+  lmiss <- read.table(paste0(get.path("genotype", local),
+                             "riskSNPs_AF_CAD_EUR_AFHRI_B_miss.lmiss"),
+                      h=T, stringsAsFactors = F)
+  colnames(lmiss)
+  frq <- read.table(paste0(get.path("genotype", local),
+                           "riskSNPs_AF_CAD_EUR_AFHRI_B_stats.frq"),
+                    h=T, stringsAsFactors = F)
+  colnames(frq)
+  stats <- merge(lmiss, frq,
+                 all = T, sort = F)
+  head(stats)
+  head(hwe)
+  stats <- merge(stats[, c("CHR", "SNP", "N_MISS", "N_GENO", "F_MISS", "MAF", "NCHROBS")],
+                 hwe,
+                 all = T, sort = F)
+  #doubles <- stats2[stats2$SNP %in% stats2$SNP[duplicated(stats2$SNP)], ]
+  saveRDS(stats,
+          file = paste0(get.path("genotype", local),
+                        "riskSNPs_AF_CAD_EUR_AFHRI_B_stats.RDS"))
+  
+  head(stats)
+  stats <- merge(stats, ref[, c("position_hg19", "variant",
+                                "effect_allele", "effect_weight",
+                                "allele.match", "snps")],
+                 by.x = c("SNP"),
+                 by.y = c("snps"),
+                 all.y = T, sort = F)
+  
+  stats$miss <- 0
+  stats$miss[stats$F_MISS>0.2] <- 1
+  
+  stats$high_top_quartile <- 0
+  stats$high_top_quartile[stats$effect_weight > summary(stats$effect_weight)["3rd Qu."]] <- 1
+  
+  stats$high_top_decile <- 0
+  stats$high_top_decile[stats$effect_weight > quantile(stats$effect_weight,
+                                                     probs = seq(0, 1, length.out = 11),
+                                                     na.rm = T)["90%"]] <- 1
+
+  saveRDS(stats,
+          file = paste0(get.path("genotype", local),
+                        "riskSNPs_AF_CAD_EUR_AFHRI_B_stats.RDS"))
+} else {
+  stats <- readRDS(paste0(get.path("genotype", local),
+                          "riskSNPs_AF_CAD_EUR_AFHRI_B_stats.RDS"))
+}
+
+stats$miss <- as.numeric(stats$F_MISS>0.2)
+stats$high_weight <- 0
+stats$high_weight[stats$effect_weight > summary(stats$effect_weight)["3rd Qu."]] <- 1
+print("Missing (>20%) vs. higher weight (top quartile) SNPs:")
+print(table(stats$miss, stats$high_weight))
+
+ggplot() +
+  geom_histogram(data=stats[stats$miss==0, ],
+                 aes(x=log(effect_weight), fill="ok", col="ok"),
+                 alpha = 0.5, bins = 100, size=0.3) +
+  geom_histogram(data=stats[stats$miss==1, ],
+                 aes(x=log(effect_weight), fill="F_MISS>0.2", col="F_MISS>0.2"),
+                 alpha = 0.5, bins = 100, size=0.3) +
+  theme_bw() +
+  scale_color_manual("missingness", values = col.set[c(3,1)]) +
+  scale_fill_manual("missingness", values = col.set[c(3,1)]) +
+  labs(title = "Distribution of PRS SNP weights stratified by missingness")
+
+ggplot(stats[stats$high_weight==1, ], aes(x=MAF)) +
+  geom_histogram(bins = 50, alpha = 0.5,
+                 col = col.set[1], fill = col.set[1]) +
+  theme_bw() +
+  labs(title = "Distribution of MAF for variants with PRS weights in the top quartile")
+
+print(paste0("Fraction of missing SNPs: ", sum(stats$miss)/dim(stats)[1]))
+print(paste0("Fraction of higher weight SNPs that are missing: ",
+      sum(stats$miss[stats$high_weight==1])/sum(stats$high_weight)))
+```
+
+For the 1000 Genomes individuals, almost all of the 6 730 540 SNPs with weights in the PRS were measured with an overall genotyping rate of 99.9%. For the AFHRI-B cohort, 33.5% had a genotyping rate per SNP lower than 80%. If we consider “higher weight SNPs” as the top quartile of SNPs ranked by their risk score weight, 57.5% of higher weight SNPs have a genotyping rate per SNP of less than 80.0%.
+
+## Estimate PRS variance from 1000 genomes data only 
+```{r}
+if(F){
+  stats <- readRDS(paste0(get.path("genotype", local),
+                            "riskSNPs_AF_CAD_EUR_AFHRI_B_stats.RDS"))
+  
+  ref_risk_file <- paste0(get.path("risk", local),
+                          "AF/AtrialFibrillation_PRS_LDpred_rho0.003_v3_reference_EUR_AFHRI-B.txt")
+  ref_risk_topquar <- paste0(get.path("risk", local),
+                          "AF/AtrialFibrillation_PRS_LDpred_rho0.003_v3_reference_EUR_AFHRI-B_top_quartile.txt")
+  write.table(stats[stats$high_top_quartile==1, c("SNP", "effect_allele", "effect_weight")],
+              file = ref_risk_topquar,
+              sep = "\t", quote = F, row.names = F, col.names = F)
+  ref_risk_nonmiss <- paste0(get.path("risk", local),
+                          "AF/AtrialFibrillation_PRS_LDpred_rho0.003_v3_reference_EUR_AFHRI-B_AFHRInonmiss.txt")
+  write.table(stats[stats$miss==0, c("SNP", "effect_allele", "effect_weight")],
+              file = ref_risk_nonmiss,
+              sep = "\t", quote = F, row.names = F, col.names = F)
+  ref_risk_misstopdec <- paste0(get.path("risk", local),
+                          "AF/AtrialFibrillation_PRS_LDpred_rho0.003_v3_reference_EUR_AFHRI-B_AFHRImiss_top_decile.txt")
+  write.table(stats[stats$high_top_decile==1 & stats$miss==1, c("SNP", "effect_allele", "effect_weight")],
+              file = ref_risk_misstopdec,
+              sep = "\t", quote = F, row.names = F, col.names = F)
+  ref_risk_misstopquar <- paste0(get.path("risk", local),
+                          "AF/AtrialFibrillation_PRS_LDpred_rho0.003_v3_reference_EUR_AFHRI-B_AFHRImiss_top_quartile.txt")
+  write.table(stats[stats$high_top_quartile==1 & stats$miss==1, c("SNP", "effect_allele", "effect_weight")],
+              file = ref_risk_misstopquar,
+              sep = "\t", quote = F, row.names = F, col.names = F)
+  
+  bfile <- paste0(get.path("genotype", local),
+                  "riskSNPs_AF_CAD_EUR_AFHRI_B")
+  
+  system(paste0("plink --bfile ", bfile,
+                " --remove ", paste0(get.path("genotype", local), "AFHRI-B.fam"),
+                " --score ", ref_risk_file, " sum ",
+                " --out ", paste0(get.path("genotype", local),
+                                  "AF_PRS_EURonly_all")))
+  
+  system(paste0("plink --bfile ", bfile,
+                " --remove ", paste0(get.path("genotype", local), "AFHRI-B.fam"),
+                " --score ", ref_risk_topquar, " sum ",
+                " --out ", paste0(get.path("genotype", local),
+                                  "AF_PRS_EURonly_top_quartile")))
+  
+  system(paste0("plink --bfile ", bfile,
+                " --remove ", paste0(get.path("genotype", local), "AFHRI-B.fam"),
+                " --score ", ref_risk_miss, " sum ",
+                " --out ", paste0(get.path("genotype", local),
+                                  "AF_PRS_EURonly_AFHRImiss")))
+  
+  system(paste0("plink --bfile ", bfile,
+                " --remove ", paste0(get.path("genotype", local), "AFHRI-B.fam"),
+                " --score ", ref_risk_nonmiss, " sum ",
+                " --out ", paste0(get.path("genotype", local),
+                                  "AF_PRS_EURonly_AFHRInonmiss")))
+  
+  system(paste0("plink --bfile ", bfile,
+                " --remove ", paste0(get.path("genotype", local), "AFHRI-B.fam"),
+                " --score ", ref_risk_misstopquar, " sum ",
+                " --out ", paste0(get.path("genotype", local),
+                                  "AF_PRS_EURonly_AFHRImiss_top_quartile")))
+}
+
+AF_score.all <- read.table(paste0(get.path("genotype", local),
+                                  "AF_PRS_EURonly_all.profile"),
+                           h=T, stringsAsFactors=F)
+colnames(AF_score.all) <- c("FID", "IID", "PHENO", "CNT.all", "CNT2.all", "SCORESUM.all")
+
+AF_score.topquar <- read.table(paste0(get.path("genotype", local),
+                                  "AF_PRS_EURonly_top_quartile.profile"),
+                           h=T, stringsAsFactors=F)
+colnames(AF_score.topquar) <- c("FID", "IID", "PHENO", "CNT.topquar", "CNT2.topquar", "SCORESUM.topquar")
+
+AF_score.miss <- read.table(paste0(get.path("genotype", local),
+                                  "AF_PRS_EURonly_AFHRImiss.profile"),
+                           h=T, stringsAsFactors=F)
+colnames(AF_score.miss) <- c("FID", "IID", "PHENO", "CNT.miss", "CNT2.miss", "SCORESUM.miss")
+
+AF_score.nonmiss <- read.table(paste0(get.path("genotype", local),
+                                  "AF_PRS_EURonly_AFHRInonmiss.profile"),
+                           h=T, stringsAsFactors=F)
+colnames(AF_score.nonmiss) <- c("FID", "IID", "PHENO", "CNT.nonmiss", "CNT2.nonmiss", "SCORESUM.nonmiss")
+
+plot(AF_score.all$SCORESUM.all, AF_score.nonmiss$SCORESUM.nonmiss)
+cor(AF_score.all$SCORESUM.all, AF_score.nonmiss$SCORESUM.nonmiss)
+identical(AF_score.all$IID, AF_score.nonmiss$IID)
+
+score1k <- data.frame(AF_score.all,
+                      AF_score.miss[, -c(1:3)],
+                      AF_score.nonmiss[, -c(1:3)],
+                      AF_score.topquar[, -c(1:3)],
+                      stringsAsFactors = F)
+
+summary(lm(SCORESUM.all~SCORESUM.nonmiss, data = score1k))
+summary(lm(SCORESUM.all~SCORESUM.topquar, data = score1k))
+```
+
+## PRS incl low-confidence imputed genotypes
+```{r, eval=F}
+gt.imp <- "/storage/groups/epigenereg01/datasets/symatrial/20180712/imputed/snpchip/imputed_c1_c22/"
+risk <- data.frame(NULL, stringsAsFactors = F)
+bim <- data.frame(NULL, stringsAsFactors = F)
+for(folder in paste0("c", 1:22)){
+  # folder <- "c1"
+  stats1 <- stats[paste0("c", stats$CHR) == folder, ]
+  bim.p <- read.table(file = paste0(gt.imp, folder, "/AFHRI-B.bim"),
+                      stringsAsFactors = F)
+  bim.p <- bim.p[!duplicated(bim.p), ]
+  #bim.p <- bim2
+  colnames(bim.p) <- c("chr", "snp.id", "pos.1", "pos", "a1", "a2")
+  bim.p$variant <- paste(bim.p$chr, bim.p$pos, bim.p$a1, bim.p$a2, sep = ":")
+  bim.p$variant.rev <- paste(bim.p$chr, bim.p$pos, bim.p$a2, bim.p$a1, sep = ":")
+  if(sum(bim.p$variant %in% stats$SNP &
+       bim.p$variant.rev %in% stats$SNP)){
+    print(paste0("Duplicates in ", folder))
+  }
+  bim.p$variant[bim.p$variant.rev %in% stats1$SNP] <-
+    bim.p$variant.rev[bim.p$variant.rev %in% stats1$SNP]
+
+  
+  risk.p <- merge(stats1[, c("SNP", "effect_allele", "effect_weight", "CHR", "position_hg19")],
+                  bim.p[, c("snp.id", "variant", "variant.rev", "a1", "a2", "chr", "pos")],
+                  by.x = "SNP", by.y = "variant",
+                  all = T, sort = F)
+  
+  risk <- rbind(risk,
+                risk.p[!(is.na(risk.p$effect_weight)),
+                       c("snp.id", "effect_allele", "effect_weight",
+                         "CHR", "position_hg19", "a1", "a2", "SNP")])
+  
+  risk.p[is.na(risk.p$effect_weight), c("effect_allele", "CHR", "position_hg19")] <- 
+  risk.p[is.na(risk.p$effect_weight), c("a2", "chr", "pos")]
+  risk.p[is.na(risk.p$effect_weight), "effect_weight"] <- 0
+  colnames(risk.p) <- c("variant", "effect_allele", "effect_weight",
+                        "chr", "position_hg19",
+                        "snp.id", "variant.rev", "a1", "a2", "chr.2", "pos")
+                        folder))
+  write.table(risk.p[, c("snp.id", "effect_allele", "effect_weight",
+                         "a1", "a2", "variant", "variant.rev", "chr", "position_hg19")],
+              file = paste0(gt.imp,
+                            folder, "/AF_PRS_weights.txt"),
+              row.names = F, col.names = T, quote = F, sep = "\t")
+  
+  bim <- rbind(bim,
+               bim.p[bim.p$variant %in% stats1$SNP,
+                     c("chr", "snp.id", "pos.1", "pos", "a1", "a2", "variant")])
+  print(paste0("Chromosome ", folder, " done."))
+}
+
+saveRDS(risk,
+        file = paste0(get.path("risk", local),
+                      "SNP_ID_mapping_AF_PRS_AFHRI-B_imputed.RDS"))
+
+risk <- readRDS(file = paste0(get.path("risk", local),
+                              "SNP_ID_mapping_AF_PRS_AFHRI-B_imputed.RDS"))
+colnames(risk) <- c("snp_id", "effect_allele", "effect_weight",
+                    "CHR", "position_hg19", "a1", "a2", "SNP")
+write.table(risk[!is.na(risk$snp_id), ],
+            file = paste0(get.path("risk", local),
+                          "SNP_ID_mapping_AF_PRS_AFHRI-B_imputed.txt"),
+            row.names = F, col.names = T, quote = F, sep = "\t")
+
+saveRDS(bim,
+        file = paste0(get.path("risk", local),
+                      "SNP_ID_mapping_AF_PRS_AFHRI-B_imputed.bim.RDS"))
+```
+
+Calculate PRS based on the unfiltered dosages of the imputed genotypes using `scripts/PRS_trans_analyses/impute_to_prs.py`.
+```{bash, eval=F}
+genfiles=$(for i in {1..22}; do echo -n "data/imputed/snpchip/imputed_c1_c22/c$i/AFHRI-B.gen "; done)
+
+./scripts/PRS_trans_analyses/impute_to_prs.py -w data/imputed/SNP_ID_mapping_AF_PRS_AFHRI-B_imputed.txt -o data/imputed/AF_PRS_from_all_imputed_snps.txt -s data/imputed/AFHRI-B.sample $genfiles
+```
+
+```{r, fig.height=5, fig.width=15}
+prs.imp <- read.csv(paste0(get.path("risk", local),
+                           "AF_PRS_from_all_imputed_snps2.txt"),
+                    stringsAsFactors = F, sep = "\t")
+
+scores <- readRDS(paste0(get.path("dataset", local),
+                           "risk_score/GPS_scores_EUR_AFHRI-B.RDS"))
+scores$AF_Status <- factor(scores$AF_Status, levels = c(0,1,2),
+                           labels = c("Ctrl", "Prevalent AF", "Post-operative AF"))
+scores <- scores[!is.na(scores$fibro.score.imp.prot.meta), ]
+scores$fibro.score.imp.prot.meta <- NULL
+scores <- scores[!duplicated(scores), ]
+rownames(scores) <- scores$externID2
+
+prs.nonmiss <- read.table(paste0(get.path("genotype", local),
+                                 "AF_PRS_AFHRIonly_AFHRInonmiss.profile"),
+                          stringsAsFactors = F, h = T)
+
+df <- merge(scores, prs.imp,
+            by.x = "externID2", by.y = "id",
+            all = T)
+df <- merge(df, prs.nonmiss[, c("IID", "SCORESUM")],
+            by.x = "externID2", by.y = "IID",
+            all = T)
+
+cor.test(df$AF.GPS, df$PRS,
+         use = "pairwise.complete.obs")
+cor.test(df$PRS, df$SCORESUM,
+         use = "pairwise.complete.obs")
+cor.test(df$AF.GPS, df$SCORESUM,
+         use = "pairwise.complete.obs")
+
+cor.test(AF_score.all$SCORESUM.all,
+         AF_score.nonmiss$SCORESUM.nonmiss,
+         use = "pairwise.complete.obs")
+
+ggarrange(
+  ggplot(score1k,
+         aes(x = SCORESUM.all, y = SCORESUM.nonmiss)) +
+    geom_point(col = col.set[1]) +
+    theme_bw() +
+    theme(aspect.ratio = 1) +
+    labs(x = "PRS on all genotypes",
+         y = "PRS on genotypes non-missing in the AFHRI cohort",
+         title = "PRS on the 1000 genomes cohort\nPearson's cor 0.96 (P<2.2e-16)"),
+  ggplot(df,
+         aes(x = AF.GPS, y = PRS)) +
+    geom_point(col = col.set[1]) +
+    theme_bw() +
+    theme(aspect.ratio = 1) +
+    labs(x = "PRS used in the paper",
+         y = "PRS on all imputed genotypes",
+         title = "PRS on the AFHRI cohort\nPearson's correlation 0.98 (P<2.2e-16)"),
+  ggplot(df,
+         aes(x = PRS, y = SCORESUM)) +
+    geom_point(col = col.set[1]) +
+    theme_bw() +
+    theme(aspect.ratio = 1) +
+    labs(x = "PRS on all imputed genotypes",
+         y = "PRS on high confidence, non-missing genotypes only",
+         title = "PRS on the AFHRI cohort\nPearson's correlation 0.97 (P<2.2e-16)"),
+  nrow = 1, ncol = 3,
+  common.legend = T, legend = "none",
+  labels = c("a", "b", "c")
+)
+
+t.test(AF.GPS~preOP_AF,
+       data = df[df$AF_Status %in% c("Ctrl", "Prevalent AF"), ],
+       alternative = "less")
+t.test(PRS~preOP_AF,
+       data = df[df$AF_Status %in% c("Ctrl", "Prevalent AF"), ],
+       alternative = "less")
+t.test(SCORESUM~preOP_AF,
+       data = df[df$AF_Status %in% c("Ctrl", "Prevalent AF"), ],
+       alternative = "less")
+
+
+ggarrange(
+  ggplot(df[df$AF_Status %in% c("Ctrl", "Prevalent AF"), ],
+         aes(x = AF_Status, y = AF.GPS,
+             col = AF_Status, fill = AF_Status)) +
+    geom_boxplot(alpha=0.2) +
+    geom_point(position = position_jitter(width = 0.3), size=1) +
+    scale_color_manual(values = col.set[c(1,3)]) +
+    scale_fill_manual(values = col.set[c(1,3)]) +
+    theme_bw() +
+    labs(x = "Disease status",
+         y = "PRS on high confidence genotypes\nestimated together with 1000 genome individuals",
+         title = "PRS used in the paper\nt = -1.5, P = 0.067 (one-sided t-test)"),
+  ggplot(df[df$AF_Status %in% c("Ctrl", "Prevalent AF"), ],
+         aes(x = AF_Status, y = PRS,
+             col = AF_Status, fill = AF_Status)) +
+    geom_boxplot(alpha=0.2) +
+    geom_point(position = position_jitter(width = 0.3), size=1) +
+    scale_color_manual(values = col.set[c(1,3)]) +
+    scale_fill_manual(values = col.set[c(1,3)]) +
+    theme_bw() +
+    labs(x = "Disease status",
+         y = "\nPRS on all imputed genotypes",
+         title = "Dosages for all imputed genotypes\nt = -1.3, P = 0.10 (one-sided t-test)"),
+  ggplot(df[df$AF_Status %in% c("Ctrl", "Prevalent AF"), ],
+         aes(x = AF_Status, y = SCORESUM,
+             col = AF_Status, fill = AF_Status)) +
+    geom_boxplot(alpha=0.2) +
+    geom_point(position = position_jitter(width = 0.3), size=1) +
+    scale_color_manual(values = col.set[c(1,3)]) +
+    scale_fill_manual(values = col.set[c(1,3)]) +
+    theme_bw() +
+    labs(x = "Disease status",
+         y = "\nPRS on high confidence/non-missing genotypes only",
+         title = "Non-missing genotypes only\nt = -1.7, P = 0.053 (one-sided t-test)"),
+  nrow = 1, ncol = 3,
+  common.legend = T, legend = "none",
+  labels = c("a", "  b", "  c")
+)
+```
+
+
+# NKX2-5 replication
+
+```{r}
+gse128188 <- readRDS(paste0(get.path("replication", local),
+                            "GSE128188/GSE128188_summary.RDS"))
+names(gse128188)
+
+pxd006675 <- readRDS(paste0(get.path("replication", local),
+                            "PXD006675/PXD006675_summary.RDS"))
+names(pxd006675)
+
+gtex <- readRDS(paste0(get.path("replication", local),
+                              "GTEx_v8/GTEx_summary.RDS"))
+names(gtex)
+
+afhri <- readRDS(paste0(get.path("replication", local),
+                        "AFHRI_summary.RDS"))
+names(afhri)
+```
+
+## Paper figure 6: Replication summary
+
+```{r, fig.width=13, fig.height=6}
+genes2 <- genes.ev
+targets2 <- targets.ev
+
+heatAF <- data.frame(cbind(afhri[["heat.AF"]][["mRNA"]][genes, c("ctrl", "AF")],
+                           afhri[["heat.AF"]][["prot"]][genes, c("ctrl", "AF")],
+                           gse128188[["heat.AF"]][genes, ],
+                           pxd006675[["heat.AF"]][genes, c(1, 2)]))
+
+anno.cols <- list(AF=c("Ctrl" = "black",
+                       "AF" = myred),
+                  Type=c("Trans eQTL" = col.paired[2],
+                         "Trans pQTL" = col.paired[10],
+                         "NKX2-5 targets" = col.paired[9]),
+                  Region=c("Right atrium" = col.paired[3],
+                           "Left atrium" = col.paired[5]),
+                  Omic=c("mRNA" = col.paired[2],
+                         "Protein" = col.paired[10]),
+                  Dataset=c("AFHRI" = col.set2[1],
+                            "GSE128188" = col.set2[2],
+                            "PXD006675" = col.set2[3]#,
+                            #"GTEx" = col.set2[4]
+                            ))
+
+p.af <- pheatmap(heatAF,
+         annotation_row = data.frame(Type = c(rep("Trans eQTL", 2),
+                                              rep("Trans pQTL", 5),
+                                              rep("NKX2-5 targets", 13)),
+                                     row.names = genes),
+         annotation_col = data.frame(#AF = c(rep(c("ctrl", "AF"), 5)),
+                                     Region = c(rep("Right atrium", 6),
+                                                rep("Left atrium", 4)),
+                                     Omic = c(rep("mRNA", 2),
+                                              rep("Protein", 2),
+                                              rep("mRNA", 4),
+                                              rep("Protein", 2)),
+                                     # dataset = c(rep("AFHRI", 4),
+                                     #             rep("GSE128188", 4),
+                                     #             rep("PXD006675", 2)),
+                                     row.names = colnames(heatAF)),
+         annotation_colors = anno.cols,
+         annotation_legend = F,
+         na_col = "white",
+         gaps_row = c(0,2,7),
+         gaps_col = c(2,4,4,6,8,8),
+         labels_row = genes2,
+         #labels_col = c(rep(c("Ctrl", "AF"), 5)),
+         labels_col = c("\nAF:    Ctrl             \nDataset:               \n  GSEA:    P = 0.269",
+                        "\nAF\nAFHRI               \n",
+                        "\nCtrl\n \n                 P = 7.17e-5",
+                        "\nAF\nAFHRI                \n",
+                        "\nCtrl\n \n                  P = 0.0189",
+                        "\nAF\nGSE128188                \n",
+                        "\nCtrl\n \n                  P = 0.0141",
+                        "\nAF\nGSE128188                \n",
+                        "\nCtrl\n \n                  P = 1.24e-4",
+                        "\nAF\nPXD006675               \n"),
+         angle_col = 0,#c(0, 45, 90, 270 and 315),
+         cluster_rows = F,
+         cluster_cols = F,
+         silent = T,
+         main = "AF differential expression\n(mean centered and scaled values per group)")
+#p.af
+
+anno.cols <- list(AF=c("Ctrl" = "black",
+                       "AF" = myred),
+                  Type=c("Trans eQTL" = col.paired[2],
+                         "Trans pQTL" = col.paired[10],
+                         "NKX2-5 targets" = col.paired[9]),
+                  Region=c("Right atrium" = col.paired[3],
+                           "Left atrium" = col.paired[5]),
+                  Omic=c("mRNA" = col.paired[2],
+                         "Protein" = col.paired[10]),
+                  Dataset=c("AFHRI" = brewer.pal(11, "Spectral")[5],
+                            "GSE128188" = col.set2[1],
+                            "PXD006675" = col.set2[3],
+                            "GTEx" = col.set2[4]))
+heatCOR <- data.frame(cbind(afhri[["heat.cor"]],
+                            gtex[["heat.cor"]],
+                            gse128188[["heat.cor"]][, 1]))
+
+
+heatCOR2 <- signif(heatCOR, 2)
+heatCOR2[is.na(heatCOR2)] <- ""
+heatCOR2[heatCOR2==0.50] <- "0.50"
+heatCOR2[heatCOR2==0.60] <- "0.60"
+heatCOR2[heatCOR2==0.70] <- "0.70"
+
+breaksList = c(seq(-1, -0.41, length.out = 10),
+               seq(-0.4, 0, length.out = 20),
+               seq(0.01, 0.4, length.out = 20),
+               seq(0.41, 1, length.out = 10))
+
+p.cor <- pheatmap(heatCOR,
+         annotation_row = data.frame(Type = c(rep("Trans eQTL", 1),
+                                              #rep("Trans eQTL", 2),
+                                              #rep("Trans pQTL", 5),
+                                              rep("NKX2-5 targets", 13)),
+                                     #row.names = genes),
+                                     row.names = rownames(heatCOR)),
+         annotation_col = data.frame(#AF = c(NA, NA, "Ctrl", NA),
+                                     Region = c(rep("Right atrium", 4)),
+                                     Omic = c("mRNA", "Protein",
+                                              "mRNA", "mRNA"),
+                                     row.names = colnames(heatCOR)),
+         annotation_colors = anno.cols,
+         annotation_legend = T,
+         na_col = "white",
+         display_numbers = heatCOR2,
+         breaks = breaksList,
+         legend_breaks = c(-1, -0.5, 0, 0.2, 0.4, 0.6, 0.8, 1),
+         #legend_labels = c("0", "0.1", "0.5", "1", "2", "5", "8.5"),
+         color = colorRampPalette(rev(brewer.pal(n = 7, name = "RdYlBu")))(length(breaksList)),
+         #na_col = "transparent",
+         gaps_row = c(0,1),
+         gaps_col = c(2,3),
+         labels_row = c("NKX2-5**", targets2),
+         labels_col = c("\nAll\nAFHRI\n",
+                        "\nAll\nAFHRI\n",
+                        "\nCtrl\nGTEx \n",
+                        "\nAll\n    GSE128188\n"),
+         angle_col = 0,#c(0, 45, 90, 270 and 315),
+         cluster_rows = F,
+         cluster_cols = F,
+         silent = T,
+         main = "Coexpression of NKX2-5 and\nits targets (Pearson's correlation)")
+
+r3 <- ggarrange(p.af[[4]], p.cor[[4]],
+          nrow = 1, ncol = 2,
+          labels = c("a", "b"),
+          hjust = c(-0.5, 3),
+          widths = c(1.7,1))
+print(r3)
+```
+
+## Differential expression
+
+### PXD006675
+```{r}
+stats <- read.csv(paste0(get.path("replication", local),
+                            "PXD006675/AFib volcanoplot data- copy.txt"),
+                     h=T, stringsAsFactors = F, sep = "\t")
+stats$LOG.P.value.2 <- as.numeric(paste0("0.", gsub("\\.", "", stats$LOG.P.value.)))*10
+stats$Difference2 <- as.numeric(paste0("0.", gsub("\\.", "", stats$Difference)))*10
+stats$Difference2[grep("\\-", stats$Difference)] <- as.numeric(paste0("-0.", gsub("\\.", "", gsub("\\-", "", stats$Difference[grep("\\-", stats$Difference)]))))*10
+stats$P.value2 <- 10^(-stats$LOG.P.value.2)
+stats$FDR <-p.adjust(stats$P.value2, method = "BH")
+stats$FDR.up <- NA
+stats$FDR.up[stats$Difference2>0] <-p.adjust(stats$P.value2[stats$Difference2>0], method = "BH")
+stats$FDR.down <- NA
+stats$FDR.down[stats$Difference2<0] <-p.adjust(stats$P.value2[stats$Difference2<0], method = "BH")
+stats$Gene.names[grep("02\\. Sep", stats$Gene.names)] <- gsub("02\\. Sep", "SEPT2", stats$Gene.names[grep("02\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("05\\. Sep", stats$Gene.names)] <- gsub("05\\. Sep", "SEPT5", stats$Gene.names[grep("05\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("07\\. Sep", stats$Gene.names)] <- gsub("07\\. Sep", "SEPT7", stats$Gene.names[grep("07\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("08\\. Sep", stats$Gene.names)] <- gsub("08\\. Sep", "SEPT8", stats$Gene.names[grep("08\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("09\\. Sep", stats$Gene.names)] <- gsub("09\\. Sep", "SEPT9", stats$Gene.names[grep("09\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("10\\. Sep", stats$Gene.names)] <- gsub("10\\. Sep", "SEPT10", stats$Gene.names[grep("10\\. Sep", stats$Gene.names)])
+stats$Gene.names[grep("11\\. Sep", stats$Gene.names)] <- gsub("11\\. Sep", "SEPT11", stats$Gene.names[grep("11\\. Sep", stats$Gene.names)])
+
+stats$Gene.names[grep("02\\. Mar", stats$Gene.names)] <- gsub("02\\. Mar", "MTARC2", stats$Gene.names[grep("02\\. Mar", stats$Gene.names)])
+stats$Gene.names[grep("05\\. Mar", stats$Gene.names)] <- gsub("05\\. Mar", "MTARC5", stats$Gene.names[grep("05\\. Mar", stats$Gene.names)])
+
+library(dplyr)
+library(tidyr)
+stats2 <- stats[, c("Protein.IDs", "Gene.names", "Significant",
+                    "LOG.P.value.2", "Difference2", "P.value2")]
+stats2 <- stats2%>%
+    mutate(symbol=strsplit(Gene.names,"\\;"))%>%
+    unnest(symbol)
+stats2 <- stats2[order(stats2$LOG.P.value.2, decreasing = T), ]
+stats2 <- stats2[!duplicated(stats2$symbol), ]
+stats2 <- as.data.frame(stats2)
+stats2$ID <- paste0(gsub("\\;", "_", stats2$Gene.names), ":",
+                    gsub("\\;", "_", stats2$Protein.IDs))
+stats2$proteins <- gsub("\\;", "_", stats2$Protein.IDs)
+rownames(stats2) <- stats2$symbol
+stats2 <- stats2[order(stats2$Significant, stats2$LOG.P.value.2), ]
+
+stats.prot <- stats2[stats2$symbol %in% genes, c("symbol", "Protein.IDs", "Gene.names", "Difference2", "P.value2", "Significant")]
+stats.prot <- stats.prot[genes, ]
+rownames(stats.prot) <- genes
+stats.prot$FDR <- p.adjust(stats.prot$P.value2, method = "BH")
+
+print.data.frame(stats.prot[, -2],
+                 row.names = F)
+```
+
+### GSE128188
+
+```{r}
+library(readxl)
+  
+de.r <- data.frame(read_excel(paste0(get.path("replication", local), "GSE128188/",
+                                     "Phys Genomics Diff gene expression EdgeR results.xlsx"),
+                              sheet = "SRRA_AFRA"))
+colnames(de.r) <- c("symbol", "logFC", "logCPM", "PValue", "FDR")
+de.r <- de.r[de.r$symbol %in% genes, ]
+rownames(de.r) <- de.r$symbol
+de.r <- de.r[genes, ]
+de.r$FDR2 <- p.adjust(de.r$PValue, method = "BH")
+
+print("Right atrial appendage tissue:")
+de.r
+  
+de.l <- data.frame(read_excel(paste0(get.path("replication", local), "GSE128188/",
+                                   "Phys Genomics Diff gene expression EdgeR results.xlsx"),
+                                 sheet = "SRLA_AFLA"))
+colnames(de.l) <- c("symbol", "logFC", "logCPM", "PValue", "FDR")
+de.l <- de.l[de.l$symbol %in% genes, ]
+rownames(de.l) <- de.l$symbol
+de.l <- de.l[genes, ]
+de.l$FDR2 <- p.adjust(de.l$PValue, method = "BH")
+
+print("Left atrial appendage tissue:")
+de.l
+```
+
+# GTEx replication: Tissue specific expression of core genes in GTEx
+
+```{r}
+gtex <- paste0(get.path("replication", local), "GTEx_v8/")
+anno.cols <- list(AF=c("ctrl" = "black",
+                       "AF" = myred),
+                  Type=c("Trans eQTL" = col.paired[2],
+                         "Trans pQTL" = col.paired[10],
+                         "NKX2-5 target" = col.paired[9]),
+                  Region=c("Right atrium" = col.paired[3],
+                           "Left atrium" = col.paired[5]),
+                  Omic=c("mRNA" = col.paired[2],
+                         "Protein" = col.paired[10]),
+                  Dataset=c("AFHRI" = col.set2[1],
+                            "GSE128188" = col.set2[2],
+                            "PXD006675" = col.set2[3],
+                            "GTEx" = col.set2[4]))
+```
+
+## mRNA
+```{r}
+med.expr <- read.csv(paste0(gtex,
+                            "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct"),
+                     stringsAsFactors = F, sep = "\t", h = T, skip = 2)
+med.expr.core <- med.expr[med.expr$Description %in% genes, ]
+rownames(med.expr.core) <- med.expr.core$Description
+genes2 <- genes[!(genes=="PGAM2")]
+
+tissues <- as.character(read.csv(paste0(gtex,
+                                        "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct"),
+                                 stringsAsFactors = F, sep = "\t", h = F, skip = 2, nrows = 1)[1, -c(1:2)])
+
+pheatmap(log(med.expr.core[genes2, -c(1:2)]+1),
+         labels_col = tissues,
+         labels_row = genes.ev[!(genes == "PGAM2")],
+         scale = "row",
+         annotation_row = data.frame(Type = factor(c(rep("Trans eQTL", 2),
+                                                     rep("Trans pQTL", 5),
+                                                     rep("NKX2-5 target", 12)),
+                                                   levels = c("Trans eQTL", "Trans pQTL",
+                                                              "NKX2-5 target"),
+                                                   ordered = T),
+                                     row.names = genes2),
+         annotation_colors = anno.cols,
+         main = "Median mRNA expression of core gene candidates per tissue in GTEx (log(TPM), scaled per gene)",
+         treeheight_row = 0,
+         treeheight_col = 30,
+         #cutree_cols = 3,
+         cluster_rows = T, silent = T)
+
+
+```
+
+## Protein
+```{r}
+library(readxl)
+gtex.prot <- data.frame(read_excel(paste0(gtex,
+                                          "/PXD016999/1-s2.0-S0092867420310783-mmc3.xlsx"),
+                                   sheet = "F protein standard z-score",
+                                   na = "NA", skip = 2))
+gtex.prot2 <- apply(gtex.prot, 2,
+                    function(x) gsub("\\;NA_one_rep_in_raw", "", x))
+rownames(gtex.prot2) <- gtex.prot$hgnc_symbol
+gtex.prot2 <- data.frame(gtex.prot2[, -c(1:4)],
+                         stringsAsFactors = F)
+
+genes3 <- genes[!(genes=="NKX2-5")]
+gtex.prot2 <- gtex.prot2[genes3,]
+gtex.prot2 <- apply(gtex.prot2, 2, as.numeric)
+rownames(gtex.prot2) <- genes3
+
+tissues.prot <- read_excel(paste0(gtex,
+                                  "/PXD016999/1-s2.0-S0092867420310783-mmc3.xlsx"),
+                           sheet = "A tisse names",
+                           na = "NA", skip = 5, n_max = 33)
+
+pheatmap(gtex.prot2,
+         labels_col = tissues.prot$`Tissue full name`,
+         labels_row = genes.ev[!(genes == "NKX2-5")],
+         scale = "none",
+         annotation_row = data.frame(Type = factor(c(rep("Trans eQTL", 1),
+                                                     rep("Trans pQTL", 5),
+                                                     rep("NKX2-5 target", 13)),
+                                                   levels = c("Trans eQTL", "Trans pQTL",
+                                                              "NKX2-5 target"),
+                                                   ordered = T),
+                                     row.names = genes3),
+         annotation_colors = anno.cols,
+         main = "Median protein expression of core gene candidates per tissue in GTEx (standard z-scores)",
+         treeheight_row = 0,
+         treeheight_col = 30,
+         #cutree_cols = 3,
+         cluster_rows = T, silent = T)
+```
+
+## Response figure
+```{r, fig.width=15, fig.height=10}
+heat.mmrna <- pheatmap(log(med.expr.core[genes2, -c(1:2)]+1),
+         labels_col = tissues,
+         labels_row = genes.ev[!(genes == "PGAM2")],
+         scale = "row",
+         annotation_row = data.frame(Type = factor(c(rep("Trans eQTL", 2),
+                                                     rep("Trans pQTL", 5),
+                                                     rep("NKX2-5 target", 12)),
+                                                   levels = c("Trans eQTL", "Trans pQTL",
+                                                              "NKX2-5 target"),
+                                                   ordered = T),
+                                     row.names = genes2),
+         annotation_colors = anno.cols,
+         main = "Median mRNA expression of core gene candidates per tissue in GTEx (log(TPM), scaled per gene)",
+         treeheight_row = 0,
+         treeheight_col = 30,
+         #cutree_cols = 3,
+         cluster_rows = T, silent = T)
+heat.prot <- pheatmap(gtex.prot2,
+         labels_col = tissues.prot$`Tissue full name`,
+         labels_row = genes.ev[!(genes == "NKX2-5")],
+         scale = "none",
+         annotation_row = data.frame(Type = factor(c(rep("Trans eQTL", 1),
+                                                     rep("Trans pQTL", 5),
+                                                     rep("NKX2-5 target", 13)),
+                                                   levels = c("Trans eQTL", "Trans pQTL",
+                                                              "NKX2-5 target"),
+                                                   ordered = T),
+                                     row.names = genes3),
+         annotation_colors = anno.cols,
+         main = "Median protein expression of core gene candidates per tissue in GTEx (standard z-scores)",
+         treeheight_row = 0,
+         treeheight_col = 30,
+         #cutree_cols = 3,
+         cluster_rows = T, silent = T)
+
+ggarrange(
+  heat.mmrna[[4]], heat.prot[[4]],
+  nrow = 2, ncol = 1
+)
+```
+
+
