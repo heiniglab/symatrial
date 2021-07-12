@@ -8,12 +8,15 @@ https://doi.org/10.1101/2020.04.06.021527
 **Abstract:**  
 Genome-wide association studies (GWAS) for atrial fibrillation (AF) have uncovered numerous disease-associated variants. Their underlying molecular mechanisms, especially consequences for mRNA and protein expression remain largely elusive. Thus, refined multi-omics approaches are needed for deciphering the underlying molecular networks. Here, we integrate genomics, transcriptomics, and proteomics of human atrial tissue in a cross-sectional study to identify widespread effects of genetic variants on both transcript (*cis*-eQTL) and protein (*cis*-pQTL) abundance. We further establish a novel targeted *trans*-QTL approach based on polygenic risk scores to determine candidates for AF core genes. Using this approach, we identify two *trans*-eQTLs and five *trans*-pQTLs for AF GWAS hits, and elucidate the role of the transcription factor NKX2-5 as a link between the GWAS SNP rs9481842 and AF. Altogether, we present an integrative multi-omics method to uncover *trans*-acting networks in small datasets and provide a rich resource of atrial tissue-specific regulatory variants for transcript and protein levels for cardiovascular disease gene prioritization.
 
-
 We address a key hypothesis about the existence of core genes as postulated in the omnigenic model by [Liu et al.](https://doi.org/10.1016/j.cell.2019.04.014), *Cell* (2019). Core genes are central genes with trans-associations to GWAS loci, whose expression levels directly affect a disease phenotype. Here we sought to identify candidate core genes for AF to understand the contribution of trans-genetic effects in the pathology of AF. To prioritize genes satisfying the properties predicted by the omnigenic model, we evaluated the accumulation of trans-effects, their relevance in gene regulatory networks, and the disease association by the following strategy:
 
 - We evaluated the cumulated *trans*-effects of AF-associated variants on expression by ranking genes based on their correlation of mRNA and protein abundance with the PRS for AF, so called expression/protein quantitative trait score (eQTS/pQTS, [Võsa et al.](https://doi.org/10.1101/447367), *bioRxiv* 2018). While correcting for possible *cis*-effects by including the top SNP per independent *cis*-QTL loci, the PRS served as a proxy for an aggregation of AF-related *trans*-effects across the whole genome.
 - To identify genes sharing molecular function and representing biological networks that propagate *trans*-effects to core genes, gene set enrichment analysis (GSEA) was performed on the eQTS and pQTS rankings. Genes driving the enrichment of multiple gene sets were selected as core gene candidates. 
 - The link between the core gene candidates and AF was established based on a significant *trans*-eQTL or pQTL for an AF GWAS hit and further supported by differential protein abundance analysis.
+
+# Data availability
+
+Results derived using this code are available as supplementary material and in the Zenodo repository https://doi.org/10.5281/zenodo.5080229 .
 
 
 # Run your own analysis
