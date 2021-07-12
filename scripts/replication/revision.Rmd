@@ -33,8 +33,6 @@ knitr::opts_chunk$set(fig.align = "center")
 ```
 
 ```{r}
-setwd("~/work/symAtrial_QTL/scripts/revision")
-
 library(ggplot2)
 library(ggpubr)
 library(RColorBrewer)
