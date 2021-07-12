@@ -1,0 +1,893 @@
+---
+title: "Replication: Thomas et al., LAA/RAA RNAseq AF and ctrls (GSE128188)"
+author: "Ines Assum"
+date: \today
+graphics: yes
+header-includes:
+  \usepackage{graphicx, fancyhdr, multicol, xcolor}
+  \usepackage{sectsty, titling, lmodern}
+  \usepackage[T1]{fontenc}
+  \renewcommand*\familydefault{\sfdefault}
+  \definecolor{myblue}{RGB}{31, 120, 180}
+  \allsectionsfont{\color{myblue}}
+  \sectionfont{\color{myblue}\sectionrule{3ex}{0pt}{-1ex}{1pt}}
+  \pretitle{\begin{center}\LARGE\bfseries\color{myblue}}
+  \posttitle{\par\end{center}\vskip 0.5em}
+  \pagestyle{fancy}
+  \lhead{Ines Assum}
+  \rhead{\today}
+  \chead{GSE128188, Thomas et al., 2019}
+output: 
+  pdf_document:
+    toc: FALSE
+    number_sections: TRUE
+---
+
+```{r setup, include=FALSE}
+options(width = 90)
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(fig.align = "center", fig.height=8, fig.width = 12)
+```
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+library(RColorBrewer)
+library(pheatmap)
+library(reshape2)
+library(edgeR)
+library(rtracklayer)
+library(MASS)
+
+source("../helper/helper.R")
+source("../preprocessing/correction/normalization/norm.R")
+local=F
+
+
+get.duplicates <- function(df, cols){
+  df2 <- data.frame(table(df[, cols]))
+  df2 <- df2[df2$Freq>1, ]
+  colnames(df2) <- c(cols, "Freq")
+  df <- merge(df,
+              df2[cols],
+              all.y=T)
+}
+
+HMGU.blue <- "#003E6E"
+mygray <- "#C6DDEA"
+myred <- "#C01514"
+col.paired <- brewer.pal(n = 11, "Paired")
+col.set <- col.paired[c(2,8,9)]
+
+anno.cols <- list(AF=c("SR" = "black",
+                       "AF" = myred),
+                  type=c("trans eQTL" = col.paired[2],
+                         "trans pQTL" = col.paired[10],
+                         "NKX2-5 targets" = col.paired[9]),
+                  region=c("RA" = col.paired[3],
+                           "LA" = col.paired[5]))
+
+ref <- paste0(get.path("replication", local), "GSE128188/")
+```
+
+# Load data
+
+Define genes of interest:
+```{r}
+e.genes <- c("NKX2-5", "TNNT2")
+print("eQTL genes:")
+e.genes
+p.genes <- c("CYB5R3", "NDUFB3", "HIBADH", "NDUFA9", "DLAT")
+print("pQTL genes:")
+p.genes
+targets <- c("PPIF", "MYL4", "CKM", "MYL7", "PGAM2",
+             "TNNC1", "CYC1", "ETFB", "PRDX5",
+             "AK1", "ALDOA", "TCAP", "TOM1L2")
+print("NKX2-5 targets:")
+targets
+genes <- c("TNNT2", "NKX2-5",
+           "CYB5R3", "NDUFB3", "HIBADH", "NDUFA9", "DLAT",
+           "PPIF", "MYL4", "CKM", "MYL7", "PGAM2",
+           "TNNC1", "CYC1", "ETFB", "PRDX5",
+           "AK1", "ALDOA", "TCAP", "TOM1L2")
+
+genes.ev <- c("TNNT2*,++", "NKX2-5**",
+              "CYB5R3", "NDUFB3+", "HIBADH", "NDUFA9++", "DLAT",
+              "PPIF", "MYL4**,++", "CKM++", "MYL7", "PGAM2++", "TNNC1*",
+              "CYC1", "ETFB**,++", "PRDX5", "AK1", "ALDOA++", "TCAP*", "TOM1L2")
+targets.ev <- c("PPIF", "MYL4**,++", "CKM++", "MYL7", "PGAM2++", "TNNC1*",
+                "CYC1", "ETFB**,++", "PRDX5", "AK1", "ALDOA++", "TCAP*", "TOM1L2")
+
+fibro.genes <- c("ELN", "FGF10", "JAG1", "KIAA1199", "CPXM2", "FOSB",
+                 "FCRL2", "SCN7A", "NOV", "ARHGAP20", "CILP", "FRAS1",
+                 "DCDC2", "NRG1", "CLEC3B", "AFAP1L2", "COL14A1", "ITGBL1")
+print("Genes in fibrosis score: ")
+print(fibro.genes)
+```
+
+## Gene length annotations
+```{r}
+if(!file.exists(paste0(get.path("locations", local),
+                       "gencode.v31lift37.basic.gene_lengths.symbol.txt"))){
+  gtf <- import(paste0(get.path("locations", local),
+                     "gencode.v31lift37.basic.annotation.gtf"))
+  #Keep exons and UTFs
+  gtf <- gtf[gtf$type=="exon"]
+  #splitting up isoforms as preparation for the next step
+  # gene symbol
+  tmp <- split(gtf, as.character(gtf$gene_name))
+  #for each isoform, calculate the sum of all reduced exons
+  gene.length <- sum(width(reduce(tmp)))
+  gene.length <- data.frame(symbol = names(gene.length),
+                            length = gene.length,
+                            stringsAsFactors = FALSE)
+  gene.length <- gene.length[!duplicated(gene.length), ]
+  
+  write.table(gene.length,
+              file = paste0(get.path("locations", local),
+                            "gencode.v31lift37.basic.gene_lengths.symbol.txt"),
+              row.names = F, col.names = T, quote = F, sep = "\t")
+  
+  #splitting up isoforms as preparation for the next step
+  # ensembl gene_id
+  tmp <- split(gtf, as.character(gtf$gene_id))
+  #for each isoform, calculate the sum of all reduced exons
+  gene.length <- sum(width(reduce(tmp)))
+  gene.length <- data.frame(gene_id = gsub("\\..*", "", names(gene.length)),
+                            length = gene.length,
+                            stringsAsFactors = FALSE)
+  gene.length <- gene.length[!duplicated(gene.length), ]
+  
+  write.table(gene.length,
+              file = paste0(get.path("locations", local),
+                            "gencode.v31lift37.basic.gene_lengths.gene_id.txt"),
+              row.names = F, col.names = T, quote = F, sep = "\t")
+                       
+} else {
+  gene.length <- read.table(paste0(get.path("locations", local),
+                                   "gencode.v31lift37.basic.gene_lengths.symbol.txt"),
+                            h = T, sep = "\t", stringsAsFactors = F)
+  rownames(gene.length) <- gene.length$symbol
+}
+
+calculateTPM <- function(counts, gene.length){
+  counts <- counts[rownames(counts) %in% gene.length$symbol, ]
+  counts <- counts / gene.length[rownames(counts), "length"]
+  counts <- t(t(counts) / colSums(counts) * median(colSums(counts))) * 1e6
+}
+```
+
+
+# Replication: Left atrium AF vs. healthy
+
+## Load counts and correct for library size
+```{r, fig.height=6}
+gse0 <- read.csv(paste0(ref, "/GSE128188_CountsV2_EdgeR.txt"),
+                     h=T, stringsAsFactors = F, sep = "\t")
+colnames(gse0) <- c("Gene",
+                   "SR_RA_7", "SR_LA_7",
+                   "SR_RA_12", "SR_LA_12",
+                   "SR_RA_20", "SR_LA_20",
+                   "SR_RA_27", "SR_LA_27",
+                   "SR_RA_30", "SR_LA_30",
+                   "AF_RA_5", "AF_LA_5",
+                   "AF_RA_14", "AF_LA_14",
+                   "AF_RA_25", "AF_LA_25",
+                   "AF_RA_28", "AF_LA_28",
+                   "AF_RA_31", "AF_LA_31")
+rownames(gse0) <- gse0$Gene
+gse0$Gene <- NULL
+gse0 <- gse0[, c("SR_RA_7", "SR_RA_12", "SR_RA_20", "SR_RA_27", "SR_RA_30",
+               "AF_RA_5", "AF_RA_14", "AF_RA_25", "AF_RA_28", "AF_RA_31",
+               "SR_LA_7", "SR_LA_12", "SR_LA_20", "SR_LA_27", "SR_LA_30",
+               "AF_LA_5", "AF_LA_14", "AF_LA_25", "AF_LA_28", "AF_LA_31")]
+#sum(!(genes %in% rownames(gse0)))
+print("All trans QTL genes and NKX2-5 targets measured.")
+
+boxplot(log(gse0+2), las = 2,
+        main = "No huge differences in library size:")
+dge <- DGEList(counts = gse0,
+               genes = merge(data.frame(symbol = rownames(gse0),
+                                        stringsAsFactors = F),
+                             gene.length,
+                             all.x = T))
+dge2 <- filterByExpr(dge,
+                     group = c(rep("SR_RA", 5), rep("AF_RA", 5),
+                               rep("SR_LA", 5), rep("AF_LA", 5)))
+dge <- calcNormFactors(dge)
+gse.rpkm <- rpkm(dge)
+gse.log <- rpkm(dge, log = T, prior.count = 2)
+boxplot(gse.log, las = 2,
+        main = "After correction for library size (TMM-based RPKMs):")
+df <- data.frame(AF = factor(c(rep("SR", 5), rep("AF", 5),
+                               rep("SR", 5), rep("AF", 5)),
+                             levels = c("SR", "AF"), ordered = T),
+                 region = factor(c(rep("RA", 10), rep("LA", 10)),
+                                 levels = c("RA", "LA"), ordered = T),
+                 t(gse.log[genes,]),
+                 row.names = colnames(gse.log),
+                 stringsAsFactors = F)
+df.m <- melt(df,
+             id.vars = c("AF", "region"),
+             variable.name = "gene",
+             value.name = "log.TMM.RPKM")
+df.m$type <- "trans eQTL"
+df.m$type[df.m$gene %in% targets] <- "NKX2-5 target"
+df.m$type[df.m$gene %in% p.genes] <- "trans pQTL"
+df.m$type <- factor(df.m$type,
+                    levels = c("trans eQTL", "trans pQTL", "NKX2-5 target"),
+                    ordered = T)
+```
+
+
+
+```{r, fig.width=15}
+ggplot(df.m,
+       aes(x=AF, y=log.TMM.RPKM,
+           col=AF, fill=AF)) +
+  geom_boxplot(alpha=0.2) +
+  geom_point(position = position_jitter(width = 0.3), size=1) +
+  scale_color_manual(values = c("black", myred)) +
+  scale_fill_manual(values = c("black", myred)) +
+  theme_bw() +
+  labs(y = "log(TMM-based RPKM + 2)") +
+  facet_grid(region ~ type + gene,
+             scales = "free_y")
+```
+
+```{r, fig.width=14, fig.height=8}
+ggplot(df.m,
+       aes(x=region, y=log.TMM.RPKM,
+           col=region, fill=region)) +
+  geom_boxplot(alpha=0.2) +
+  scale_color_manual(values = col.paired[c(3,5)]) +
+  scale_fill_manual(values = col.paired[c(3,5)]) +
+  geom_point(data = df.m[df.m$AF=="SR", ],
+             aes(x=region, y=log.TMM.RPKM),
+             position = position_jitter(width = 0.3),
+             size=1, col = "black") +
+  geom_point(data = df.m[df.m$AF=="AF", ],
+             aes(x=region, y=log.TMM.RPKM),
+             position = position_jitter(width = 0.3),
+             size=1, col = myred) +
+  theme_bw() +
+  labs(y = "log(TMM-based RPKM + 2)") +
+  facet_wrap(. ~ type + gene,
+             nrow = 2,
+             scales = "free")
+```
+
+```{r}
+if(!file.exists(paste0(ref, "Phys Genomics Diff gene expression EdgeR results.xlsx"))){
+  group.r <- factor(c(rep(1, 5), rep(2, 5)))
+  design.r <- model.matrix(~group.r)
+  if(!file.exists(paste0(ref, "GSE128188_right_DGEList.RDS"))){
+    y.r <- DGEList(counts=gse0[, 1:10], group=group.r)
+    y.r <- calcNormFactors(y.r)
+    y.r <- estimateDisp(y.r, design.r)
+    saveRDS(y.r,
+            file = paste0(ref, "GSE128188_right_DGEList.RDS"))
+  }else{
+    y.r <- readRDS(paste0(ref, "GSE128188_right_DGEList.RDS"))
+  }
+  
+  fit.r <- glmQLFit(y.r, design.r)
+  qlf.r <- glmQLFTest(fit.r, coef=2)
+  dex.r <- exactTest(y.r)
+  
+  qlf.t <- qlf.r[c("NKX2-5", targets), ]$table
+  de.t <- dex.r[c("NKX2-5", targets), ]$table
+  
+  print("Top results (by logFC) with QLF test:")
+  rbind(head(qlf.r[order(qlf.r$table$logFC), ]$table, 10),
+        NA,
+        head(qlf.r[order(-qlf.r$table$logFC), ]$table, 10))
+  
+  print("Top results (by logFC) with exact test:")
+  rbind(head(dex.r[order(dex.r$table$logFC), ]$table, 10),
+        NA,
+        head(dex.r[order(-dex.r$table$logFC), ]$table, 10))
+  
+  print("Results for NKX2-5 targets QLF test:")
+  qlf.t
+  
+  print("Results for NKX2-5 targets exact test:")
+  de.t
+  
+  # lm.res <- t(apply(log(gse[targets, 1:10]), 1,
+  #                   function(x) summary(lm(x ~ df$AF[1:10]))$coefficients["df$AF[1:10].L", ]))
+  # 
+  # cbind(de.t$table, diff.targets$table)
+  # lm.res
+  
+  df.m$gene.p <- factor(paste(df.m$gene,
+                            signif(qlf.r$table[df.m$gene, "PValue"], 2),
+                            sep = "\nP = "),
+                      levels = unique(c(paste(genes,
+                                              signif(qlf.r$table[genes, "PValue"], 2),
+                                              sep = "\nP = "),
+                                        paste(df.m$gene,
+                                              signif(qlf.r$table[df.m$gene, "PValue"], 2),
+                                              sep = "\nP = "))),
+                      ordered = T)
+  
+} else {
+  
+  library(readxl)
+  
+  de.r <- data.frame(read_excel(paste0(ref,
+                                       "Phys Genomics Diff gene expression EdgeR results.xlsx"),
+                                sheet = "SRRA_AFRA"))
+  colnames(de.r) <- c("symbol", "logFC", "logCPM", "PValue", "FDR")
+  de.r$symbol2 <- gsub("\\-", "\\.", de.r$symbol)
+  rownames(de.r) <- de.r$symbol2
+  de.rt <- de.r[c("NKX2.5", targets), ]
+  
+  de.l <- data.frame(read_excel(paste0(ref,
+                                     "Phys Genomics Diff gene expression EdgeR results.xlsx"),
+                                   sheet = "SRLA_AFLA"))
+  colnames(de.l) <- c("symbol", "logFC", "logCPM", "PValue", "FDR")
+  de.l$symbol2 <- gsub("\\-", "\\.", de.l$symbol)
+  rownames(de.l) <- de.l$symbol2
+  de.lt <- de.l[c("NKX2.5", targets), ]
+  
+  df.m$gene.p <- NULL
+  df.m$gene.p <- factor(paste(gsub("\\.", "\\-", df.m$gene),
+                            signif(ifelse(df.m$region == "RA",
+                                          de.r[as.character(df.m$gene), "PValue"],
+                                          de.l[as.character(df.m$gene), "PValue"]), 2),
+                            sep = "\nP = "),
+                      levels = unique(c(paste(c("NKX2-5", genes, "NKX2-5", genes),
+                                              signif(c(de.r[c("NKX2.5", genes), "PValue"],
+                                                       de.l[c("NKX2.5", genes), "PValue"]), 2),
+                                              sep = "\nP = "),
+                                        paste(gsub("\\.", "\\-", df.m$gene),
+                                              signif(ifelse(df.m$region == "RA",
+                                                            de.r[as.character(df.m$gene), "PValue"],
+                                                            de.l[as.character(df.m$gene), "PValue"]), 2),
+                                              sep = "\nP = "))),
+                      ordered = T)
+}
+
+print("Right atrium:")
+print(de.rt)
+
+print("Left atrium:")
+print(de.lt)
+
+
+```
+
+```{r, fig.height=8}
+ggplot(df.m[df.m$gene %in% c("NKX2.5", targets) &
+              df.m$region == "RA", ],
+       aes(x=AF, y=log.TMM.RPKM,
+           col=AF, fill=AF)) +
+  geom_boxplot(alpha=0.2) +
+  geom_point(position = position_jitter(width = 0.3), size=2) +
+  scale_color_manual(values = c("black", myred)) +
+  scale_fill_manual(values = c("black", myred)) +
+  theme_bw() +
+  facet_wrap(. ~ gene.p,
+             nrow = 2,
+             scales = "free") +
+  labs(title = "Consistent downregulation of NKX2-5 and it's targets in AF\n(GSEA P = 0.02, evaluated using signed p-values from the edgeR exactTest)",
+       y = "Right atrium: log(TMM-based RPKM + 2)")
+```
+
+```{r, fig.height=8}
+ggplot(df.m[df.m$gene %in% c("NKX2.5", targets) &
+              df.m$region == "LA", ],
+       aes(x=AF, y=log.TMM.RPKM,
+           col=AF, fill=AF)) +
+  geom_boxplot(alpha=0.2) +
+  geom_point(position = position_jitter(width = 0.3), size=2) +
+  scale_color_manual(values = c("black", myred)) +
+  scale_fill_manual(values = c("black", myred)) +
+  theme_bw() +
+  facet_wrap(. ~ gene.p,
+             nrow = 2,
+             scales = "free") +
+  labs(title = "Consistent downregulation of NKX2-5 and it's targets in AF\n(GSEA P = 0.02, evaluated using signed p-values from the edgeR exactTest)",
+       y = "Left atrium: log(TMM-based RPKM + 2)")
+```
+
+
+```{r, fig.width=10, fig.height=5}
+#col.paired[c(10,9,5)] col.paired[c(2,1,3)]
+
+pheatmap(gse.log[genes, ],
+         scale = "row",
+         annotation_row = data.frame(type = c(rep("trans eQTL", 2),
+                                              rep("trans pQTL", 5),
+                                              rep("NKX2-5 targets", 13)),
+                                     row.names = genes),
+         annotation_col = df[, c("AF", "region")],
+         annotation_colors = anno.cols,
+         gaps_row = c(2,7),
+         gaps_col = 10,
+         show_colnames = F,
+         cluster_rows = F,
+         cluster_cols = F)
+
+mean.expr <- data.frame(SR_RA = apply(gse.log[genes, 1:5], 1, mean),
+                        AF_RA = apply(gse.log[genes, 6:10], 1, mean),
+                        SR_LA = apply(gse.log[genes, 11:15], 1, mean),
+                        AF_LA = apply(gse.log[genes, 16:20], 1, mean),
+                        row.names = genes,
+                        stringsAsFactors = F)
+anno.means <- data.frame(AF = factor(c("SR", "AF", "SR", "AF"),
+                                     levels = c("SR", "AF"),
+                                     ordered = T),
+                         region = factor(c("RA", "RA", "LA", "LA"),
+                                         levels = c("RA", "LA"),
+                                         ordered = T),
+                         row.names = colnames(mean.expr),
+                         stringsAsFactors = F)
+
+p1 <- pheatmap(mean.expr,
+         #scale = "row",
+         annotation_row = data.frame(type = c(rep("trans eQTL", 2),
+                                              rep("trans pQTL", 5),
+                                              rep("NKX2-5 targets", 13)),
+                                     row.names = genes),
+         annotation_col = anno.means[, c("AF", "region")],
+         annotation_colors = anno.cols,
+         gaps_row = c(2,7),
+         gaps_col = 2,
+         cluster_rows = F,
+         cluster_cols = F,
+         silent = T,
+         main = "Mean expression per group")
+
+p2 <- pheatmap(mean.expr,
+         scale = "row",
+         annotation_row = data.frame(type = c(rep("trans eQTL", 2),
+                                              rep("trans pQTL", 5),
+                                              rep("NKX2-5 targets", 13)),
+                                     row.names = genes),
+         annotation_col = anno.means[, c("AF", "region")],
+         annotation_colors = anno.cols,
+         gaps_row = c(2,7),
+         gaps_col = 2,
+         cluster_rows = F,
+         cluster_cols = F,
+         silent = T,
+         main = "Mean expression per group")
+
+ggarrange(p1[[4]], p2[[4]],
+          common.legend = F)
+```
+
+## GSEA analysis
+
+```{r}
+# Gene Set Enrichment AF core genes --------------------------------------------
+f.fgsea <- paste0(ref,
+                  "AF_diff_expression_GSEA_results.RDS")
+if(!file.exists(f.fgsea)){
+  c.trans <- c("TNNT2", "NKX2-5")
+  #c.prot <- c("NDUFA9", "ACOT9", "NDUFB3", "HIBADH", "ADK", "TALDO1")
+  c.prot <- c("CYB5R3", "NDUFA9", "DLAT", "NDUFB3", "HIBADH")
+  nkx <- c("PPIF", "MYL4", "CKM", "MYL7", "PGAM2", "TNNC1", "CYC1", "ETFB",
+           "PRDX5", "AK1", "ALDOA", "TCAP", "TOM1L2")
+  af.cis <- c("SNRNP27", "MYOZ1", "PCCB", "FAM13B", "SPATS2L", "GNB4", "NUCKS1")
+  weights <- read.csv(file = paste0(get.path("locations", local),
+                                  "functional_annotation/NKX2-5/",
+                                  "HiC_ChIPseq_openChrom_NKX2-5_BS_per_gene.txt"),
+                    sep = "\t")
+  nkx.all <- rownames(weights[weights$chip1.linked.open>0, ])
+  
+  library(fgsea)
+
+  gmt1 <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c2.cp.kegg.v6.1.symbols.gmt.txt")
+  gmt1[["Transcriptomics_core_genes"]] <- c.trans
+  gmt1[["Proteomics_core_genes"]] <- c.prot
+  gmt1[["Core_genes"]] <- c(c.trans, c.prot)
+  gmt1[["NKX2-5_targets"]] <- nkx
+  gmt1[["Cis_genes"]] <- af.cis
+  gmt1[["Atrial_fibrillation"]] <- c(c.trans, c.prot, nkx, af.cis)
+  
+  gmt2 <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c5.bp.v6.1.symbols.gmt.txt")
+  gmt2[["Transcriptomics_core_genes"]] <- c.trans
+  gmt2[["Proteomics_core_genes"]] <- c.prot
+  gmt2[["Core_genes"]] <- c(c.trans, c.prot)
+  gmt2[["NKX2-5_targets"]] <- nkx
+  gmt2[["Cis_genes"]] <- af.cis
+  gmt2[["Atrial_fibrillation"]] <- c(c.trans, c.prot, nkx, af.cis)
+  
+  gmt3 <- list()
+  gmt3[["Transcriptomics_core_genes"]] <- c.trans
+  gmt3[["Proteomics_core_genes"]] <- c.prot
+  gmt3[["Core_genes"]] <- c(c.trans, c.prot)
+  gmt3[["NKX2-5_targets"]] <- nkx
+  gmt3[["NKX2-5_and_targets"]] <- c("NKX2-5", nkx)
+  gmt3[["Cis_genes"]] <- af.cis
+  gmt3[["Atrial_fibrillation"]] <- c(c.trans, c.prot, nkx, af.cis)
+  gmt3[["AF_trans_core_genes_and_targets"]] <- c(c.trans, c.prot, nkx)
+  
+  gmt4 <- gmtPathways("../../../symAtrial_multiOMICs/data/current/tables/pathways/c3.tft.v6.0.symbols.gmt")
+  gmt4[["NKX2-5_custom"]] <- nkx.all
+  
+  fgsea.core <- NULL
+  set.seed(1111)
+  
+  # DE FC right atrium ----
+  rank <- de.r$logFC
+  names(rank) <- de.r$symbol
+    
+  fgsea.core[["KEGG.DE.logFC"]] <- fgsea(gmt1,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["KEGG.DE.logFC"]] <- fgsea.core[["KEGG.DE.logFC"]][order(fgsea.core[["KEGG.DE.logFC"]]$pval), ]
+  
+  fgsea.core[["GO.DE.logFC"]] <- fgsea(gmt2,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["GO.DE.logFC"]] <- fgsea.core[["GO.DE.logFC"]][order(fgsea.core[["GO.DE.logFC"]]$pval), ]
+  
+  fgsea.core[["custom.DE.logFC"]] <- fgsea(gmt3,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["custom.DE.logFC"]] <- fgsea.core[["custom.DE.logFC"]][order(fgsea.core[["custom.DE.logFC"]]$pval), ]
+  
+  fgsea.core[["TF.DE.logFC"]] <- fgsea(gmt4,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=10000)
+  fgsea.core[["TF.DE.logFC"]] <- fgsea.core[["TF.DE.logFC"]][order(fgsea.core[["TF.DE.logFC"]]$pval), ]
+  
+  
+  # DE signed Pvalue right atrium ----
+  rank <- sign(de.r$logFC)*(-log(de.r$PValue))
+  names(rank) <- de.r$symbol
+    
+  fgsea.core[["KEGG.DE.sP"]] <- fgsea(gmt1,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["KEGG.DE.sP"]] <- fgsea.core[["KEGG.DE.sP"]][order(fgsea.core[["KEGG.DE.sP"]]$pval), ]
+  
+  fgsea.core[["GO.DE.sP"]] <- fgsea(gmt2,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["GO.DE.sP"]] <- fgsea.core[["GO.DE.sP"]][order(fgsea.core[["GO.DE.sP"]]$pval), ]
+  
+  fgsea.core[["custom.DE.sP"]] <- fgsea(gmt3,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["custom.DE.sP"]] <- fgsea.core[["custom.DE.sP"]][order(fgsea.core[["custom.DE.sP"]]$pval), ]
+  
+  fgsea.core[["TF.DE.sP"]] <- fgsea(gmt4,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=10000)
+  fgsea.core[["TF.DE.sP"]] <- fgsea.core[["TF.DE.sP"]][order(fgsea.core[["TF.DE.sP"]]$pval), ]
+
+  
+  # DE Pvalue right atrium ----
+  rank <- de.r$PValue
+  names(rank) <- de.r$symbol
+
+  fgsea.core[["KEGG.DE.P"]] <- fgsea(gmt1,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["KEGG.DE.P"]] <- fgsea.core[["KEGG.DE.P"]][order(sign(fgsea.core[["KEGG.DE.P"]]$ES),
+                                                                 fgsea.core[["KEGG.DE.P"]]$pval), ]
+  
+  fgsea.core[["GO.DE.P"]] <- fgsea(gmt2,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["GO.DE.P"]] <- fgsea.core[["GO.DE.P"]][order(sign(fgsea.core[["GO.DE.P"]]$ES),
+                                                             fgsea.core[["GO.DE.P"]]$pval), ]
+  
+  fgsea.core[["custom.DE.P"]] <- fgsea(gmt3,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["custom.DE.P"]] <- fgsea.core[["custom.DE.P"]][order(sign(fgsea.core[["custom.DE.P"]]$ES),
+                                                                     fgsea.core[["custom.DE.P"]]$pval), ]
+  
+  fgsea.core[["TF.DE.P"]] <- fgsea(gmt4,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=10000)
+  fgsea.core[["TF.DE.P"]] <- fgsea.core[["TF.DE.P"]][order(sign(fgsea.core[["TF.DE.P"]]$ES),
+                                                             fgsea.core[["TF.DE.P"]]$pval), ]
+  
+  # DE FC left atrium ----
+  rank <- de.l$logFC
+  names(rank) <- de.l$symbol
+    
+  fgsea.core[["KEGG.DE.L.logFC"]] <- fgsea(gmt1,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["KEGG.DE.L.logFC"]] <- fgsea.core[["KEGG.DE.L.logFC"]][order(fgsea.core[["KEGG.DE.L.logFC"]]$pval), ]
+  
+  fgsea.core[["GO.DE.L.logFC"]] <- fgsea(gmt2,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["GO.DE.L.logFC"]] <- fgsea.core[["GO.DE.L.logFC"]][order(fgsea.core[["GO.DE.L.logFC"]]$pval), ]
+  
+  fgsea.core[["custom.DE.L.logFC"]] <- fgsea(gmt3,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["custom.DE.L.logFC"]] <- fgsea.core[["custom.DE.L.logFC"]][order(fgsea.core[["custom.DE.L.logFC"]]$pval), ]
+  
+  fgsea.core[["TF.DE.L.logFC"]] <- fgsea(gmt4,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=10000)
+  fgsea.core[["TF.DE.L.logFC"]] <- fgsea.core[["TF.DE.L.logFC"]][order(fgsea.core[["TF.DE.L.logFC"]]$pval), ]
+  
+  
+  # DE Pvalue left atrium ----
+  rank <- de.l$PValue
+  names(rank) <- de.l$symbol
+
+  fgsea.core[["KEGG.DE.L.P"]] <- fgsea(gmt1,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["KEGG.DE.L.P"]] <- fgsea.core[["KEGG.DE.L.P"]][order(sign(fgsea.core[["KEGG.DE.L.P"]]$ES),
+                                                                 fgsea.core[["KEGG.DE.L.P"]]$pval), ]
+  
+  fgsea.core[["GO.DE.L.P"]] <- fgsea(gmt2,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["GO.DE.L.P"]] <- fgsea.core[["GO.DE.L.P"]][order(sign(fgsea.core[["GO.DE.L.P"]]$ES),
+                                                             fgsea.core[["GO.DE.L.P"]]$pval), ]
+  
+  fgsea.core[["custom.DE.L.P"]] <- fgsea(gmt3,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["custom.DE.L.P"]] <- fgsea.core[["custom.DE.L.P"]][order(sign(fgsea.core[["custom.DE.L.P"]]$ES),
+                                                                     fgsea.core[["custom.DE.L.P"]]$pval), ]
+  
+  fgsea.core[["TF.DE.L.P"]] <- fgsea(gmt4,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=10000)
+  fgsea.core[["TF.DE.L.P"]] <- fgsea.core[["TF.DE.L.P"]][order(sign(fgsea.core[["TF.DE.L.P"]]$ES),
+                                                             fgsea.core[["TF.DE.L.P"]]$pval), ]
+  
+  # DE signed Pvalue left atrium ----
+  rank <- sign(de.l$logFC)*(-log(de.l$PValue))
+  names(rank) <- de.l$symbol
+    
+  fgsea.core[["KEGG.DE.L.sP"]] <- fgsea(gmt1,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["KEGG.DE.L.sP"]] <- fgsea.core[["KEGG.DE.L.sP"]][order(fgsea.core[["KEGG.DE.L.sP"]]$pval), ]
+  
+  fgsea.core[["GO.DE.L.sP"]] <- fgsea(gmt2,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["GO.DE.L.sP"]] <- fgsea.core[["GO.DE.L.sP"]][order(fgsea.core[["GO.DE.L.sP"]]$pval), ]
+  
+  fgsea.core[["custom.DE.L.sP"]] <- fgsea(gmt3,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=500)
+  fgsea.core[["custom.DE.L.sP"]] <- fgsea.core[["custom.DE.L.sP"]][order(fgsea.core[["custom.DE.L.sP"]]$pval), ]
+  
+  fgsea.core[["TF.DE.L.sP"]] <- fgsea(gmt4,
+                                 rank,
+                                 nperm=100000,
+                                 minSize = 2,
+                                 maxSize=10000)
+  fgsea.core[["TF.DE.L.sP"]] <- fgsea.core[["TF.DE.L.sP"]][order(fgsea.core[["TF.DE.L.sP"]]$pval), ]
+  
+  names(fgsea.core)
+  
+  saveRDS(fgsea.core, file = f.fgsea)
+} else {
+  fgsea.core <- readRDS(f.fgsea)
+}
+
+print("GSEA: exact test on logFC:")
+fgsea.core[["custom.exT.logFC"]][, c(1, 7)]
+
+print("GSEA: exact test on logFC (right atrium):")
+fgsea.core[["custom.DE.logFC"]][, c(1, 7)]
+
+print("GSEA: exact test on signed pvalue (right atrium):")
+fgsea.core[["custom.DE.sP"]][, c(1, 7)]
+
+print("GSEA: exact test on logFC (left atrium):")
+fgsea.core[["custom.DE.L.logFC"]][, c(1, 7)]
+
+print("GSEA: exact test on signed pvalue (left atrium):")
+fgsea.core[["custom.DE.L.sP"]][, c(1, 7)]
+
+
+```
+
+
+# NKX2-5 activity
+
+```{r}
+calculateTPM <- function(counts, gene.length){
+  counts <- counts[rownames(counts) %in% gene.length$symbol, ]
+  counts <- counts / gene.length[rownames(counts), "length"] * 1e3
+  counts <- t(t(counts) / colSums(counts) ) * 1e6
+  return(counts)
+}
+calculateRPKM <- function(counts, gene.length){
+  counts <- t(t(counts) / colSums(counts) ) * 1e6
+  counts <- counts[rownames(counts) %in% gene.length$symbol, ]
+  counts <- counts / (gene.length[rownames(counts), "length"]/1e3)
+  return(counts)
+}
+```
+
+## Estimate NKX2-5 transcription factor activity
+```{r}
+weights <- read.csv(file = paste0(get.path("locations", local),
+                                  "functional_annotation/NKX2-5/",
+                                  "HiC_ChIPseq_openChrom_NKX2-5_BS_per_gene.txt"),
+                    sep = "\t", stringsAsFactors = F)
+rownames(weights) <- weights$symbol
+
+tmm.rpkm <- gse.rpkm
+df$NKX2.5.tmm.rpkm <- as.numeric(tmm.rpkm["NKX2-5", ])
+expr.tfa.tmm.rpkm <- as.matrix(tmm.rpkm[rownames(tmm.rpkm) %in% weights$symbol[weights$chip1.linked.open>0] &
+                            rownames(tmm.rpkm) %in% gene.length$symbol, ])
+expr.tfa.tmm.rpkm <- expr.tfa.tmm.rpkm[complete.cases(expr.tfa.tmm.rpkm), ]
+df$tfa.log.tmm.rpkm <- as.numeric(matrix(weights[rownames(expr.tfa.tmm.rpkm),
+                                    "chip1.linked.open"],
+                            nrow = 1) %*% log(expr.tfa.tmm.rpkm+2))
+```
+
+```{r, fig.height=5}
+ggarrange(
+  ggplot(df[df$region=="RA", ],
+       aes(x=AF, y=NKX2.5.tmm.rpkm,
+           col=AF, fill=AF)) +
+        geom_boxplot(alpha=0.2) +
+        geom_point(position = position_jitter(width = 0.3), size=1) +
+        scale_color_manual(values = c("black", myred)) +
+        scale_fill_manual(values = c("black", myred)) +
+        theme_bw() +
+        ggtitle("NKX2-5 transcript expression\ncontrols vs. cases"),
+  ggplot(df[df$region=="RA", ],
+         aes(x=AF, y=tfa.log.tmm.rpkm,
+           col=AF, fill=AF)) +
+        geom_boxplot(alpha=0.2) +
+        geom_point(position = position_jitter(width = 0.3), size=1) +
+        scale_color_manual(values = c("black", myred)) +
+        scale_fill_manual(values = c("black", myred)) +
+        theme_bw() +
+        ggtitle("Inferred NKX2-5 activity\ncontrols vs. cases"),
+  nrow = 1, ncol = 2, common.legend = T)
+```
+
+```{r}
+gg.tf.tfa <- ggplot(df[df$region=="RA", ],
+                 aes(x=NKX2.5, y=log(tfa.log.tmm.rpkm), col=AF)) +
+  geom_point(size=1) +
+  scale_color_manual(values = c("black", myred)) +
+  theme_bw() +
+  ggtitle("NKX2-5 transcript expression\nvs. inferred activity")
+
+gg.tf <- ggplot(df[df$region=="RA", ],
+       aes(x=AF, y=NKX2.5,
+           col=AF, fill=AF)) +
+  geom_boxplot(alpha=0.2) +
+  geom_point(position = position_jitter(width = 0.3), size=1) +
+  scale_color_manual(values = c("black", myred)) +
+  scale_fill_manual(values = c("black", myred)) +
+  theme_bw() +
+  labs(y = "log(TMM-based RPKM + 2)") +
+  ggtitle("NKX2-5 transcript expression\ncontrols vs. cases")
+
+gg.tfa <- ggplot(df[df$region=="RA", ],
+       aes(x=AF, y=log(tfa.log.tmm.rpkm),
+           col=AF, fill=AF)) +
+  geom_boxplot(alpha=0.2) +
+  geom_point(position = position_jitter(width = 0.3), size=1) +
+  scale_color_manual(values = c("black", myred)) +
+  scale_fill_manual(values = c("black", myred)) +
+  theme_bw() +
+  ggtitle("Inferred NKX2-5 activity\ncontrols vs. cases")
+
+ggarrange(gg.tf.tfa, gg.tf, gg.tfa,
+          nrow = 1, ncol = 3,
+          common.legend = T)
+```
+
+
+## Correlation between NKX2-5 targets, NKX2-5 expression and NKX2-5 activity
+```{r}
+t.cor.r <- cor(cbind(t(tmm.rpkm[c("NKX2-5", targets), 1:10]),
+                   tfa=df$tfa.log.tmm.rpkm))[c(1,15), 1:14]
+t.cor.r
+t.cor.l <- cor(cbind(t(tmm.rpkm[c("NKX2-5", targets), 11:20]),
+                   tfa=df$tfa.log.tmm.rpkm))[c(1,15), 1:14]
+t.cor.l
+```
+
+# Overall summary
+```{r}
+if(!file.exists(paste0(get.path("replication", local),
+                       "GSE128188/GSE128188_summary.RDS"))){
+  gse128188 <- list()
+  gse128188[["expr"]] <- data.frame(gse.log[genes, 1:20])
+  gse128188[["heat.AF"]] <- data.frame(gse.log[genes, 1:20])
+  gse128188[["heat.AF"]]$SR_RA = as.numeric(t(apply(gse.log[genes, 1:5], 1, mean)))
+  gse128188[["heat.AF"]]$AF_RA = as.numeric(t(apply(gse.log[genes, 6:10], 1, mean)))
+  gse128188[["heat.AF"]]$SR_LA = as.numeric(t(apply(gse.log[genes, 11:15], 1, mean)))
+  gse128188[["heat.AF"]]$AF_LA = as.numeric(t(apply(gse.log[genes, 16:20], 1, mean)))
+  gse128188[["heat.AF"]] <- t(scale(t(gse128188[["heat.AF"]]),
+                                    center = T,
+                                    scale = T))[, c("SR_RA", "AF_RA", "SR_LA", "AF_LA")]
+  
+  gse128188[["heat.cor"]] <- cbind(t(t.cor.r),
+                                   t(t.cor.l))
+  colnames(gse128188[["heat.cor"]]) <- c("cor.NKX2-5.right", "cor.TFA.right",
+                                         "cor.NKX2-5.left", "cor.TFA.left")
+  
+  saveRDS(gse128188,
+          file = paste0(get.path("replication", local),
+                        "GSE128188/GSE128188_summary.RDS"))
+  
+} else {
+  gse128188 <- readRDS(paste0(get.path("replication", local),
+                              "GSE128188/GSE128188_summary.RDS"))
+}
+
+pheatmap(gse128188[["heat.AF"]],
+         cluster_rows = F,
+         cluster_cols = F,
+         main = "Mean: Z-scores of expression values")
+
+pheatmap(gse128188[["heat.cor"]],
+         cluster_rows = F,
+         cluster_cols = F,
+         main = "Correlation")
+```
+
+
+
+
+
